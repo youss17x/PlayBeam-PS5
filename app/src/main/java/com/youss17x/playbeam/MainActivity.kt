@@ -81,15 +81,15 @@ fun UploadScreen() {
         Text("PlayBeam", style = MaterialTheme.typography.headlineMedium)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(host, { host = it }, label = { Text("IP الـ PS5") },
+            OutlinedTextField(host, { host = it }, label = { Text("PS5 IP") },
                 singleLine = true, modifier = Modifier.weight(2f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-            OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("المنفذ") },
+            OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") },
                 singleLine = true, modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
 
-        OutlinedTextField(remote, { remote = it }, label = { Text("المسار على الـ PS5") },
+        OutlinedTextField(remote, { remote = it }, label = { Text("Destination path on PS5") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PRESETS.forEach { p ->
@@ -100,14 +100,14 @@ fun UploadScreen() {
         HorizontalDivider()
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { pickFolder.launch(null) }, modifier = Modifier.weight(1f)) { Text("📁 مجلد") }
-            OutlinedButton(onClick = { pickFiles.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) { Text("📄 ملفات") }
+            OutlinedButton(onClick = { pickFolder.launch(null) }, modifier = Modifier.weight(1f)) { Text("📁 Folder") }
+            OutlinedButton(onClick = { pickFiles.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) { Text("📄 Files") }
         }
         Text(
             when {
-                selected.isEmpty() -> "لم تختر شيئاً بعد"
-                isTree -> "مجلد: ${Uri.decode(selected[0].lastPathSegment ?: "").substringAfterLast(':')}"
-                else -> "${selected.size} ملف مختار"
+                selected.isEmpty() -> "Nothing selected yet"
+                isTree -> "Folder: ${Uri.decode(selected[0].lastPathSegment ?: "").substringAfterLast(':')}"
+                else -> "${selected.size} file(s) selected"
             },
             style = MaterialTheme.typography.bodyMedium
         )
@@ -116,10 +116,10 @@ fun UploadScreen() {
             Button(onClick = {
                 ctx.startService(Intent(ctx, UploadService::class.java).setAction(UploadService.ACTION_STOP))
             }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth()) { Text("إيقاف") }
+                modifier = Modifier.fillMaxWidth()) { Text("Stop") }
         } else {
             Button(onClick = ::startUpload, enabled = selected.isNotEmpty() && host.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()) { Text("⬆️ رفع إلى PS5") }
+                modifier = Modifier.fillMaxWidth()) { Text("⬆️ Upload to PS5") }
         }
 
         if (progress.running || progress.message.isNotEmpty()) {
@@ -127,7 +127,7 @@ fun UploadScreen() {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (progress.running) {
                         LinearProgressIndicator(progress = { progress.fraction }, modifier = Modifier.fillMaxWidth())
-                        Text("${(progress.fraction * 100).toInt()}%  •  ${progress.doneFiles}/${progress.totalFiles} ملف")
+                        Text("${(progress.fraction * 100).toInt()}%  •  ${progress.doneFiles}/${progress.totalFiles} files")
                         Text("${formatBytes(progress.doneBytes)} / ${formatBytes(progress.totalBytes)}  •  ${formatBytes(progress.speedBytesPerSec)}/s")
                         if (progress.currentFile.isNotEmpty())
                             Text(progress.currentFile, style = MaterialTheme.typography.bodySmall)

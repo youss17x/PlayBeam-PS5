@@ -1,32 +1,37 @@
 # PlayBeam
 
-تطبيق أندرويد لرفع الملفات والمجلدات إلى PS5 عبر FTP.
+An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
 
-## الميزات (v0.1)
-- اختيار مجلد كامل (مع كل المجلدات الفرعية) أو عدة ملفات
-- رفع في الخلفية (Foreground Service) مع إشعار وشريط تقدّم وزر إيقاف
-- يبقى الرفع شغّالاً حتى لو انطفأت الشاشة (WifiLock + WakeLock)
-- مسارات جاهزة: `/data/homebrew` و`/data/etaHEN/games` و`/mnt/usb0`
-- حفظ الـ IP والمنفذ والمسار تلقائياً
+## Features (v0.1)
+- Pick a whole folder (including all subfolders) or multiple files
+- Background upload (foreground service) with a progress notification and a Stop button
+- Keeps uploading when the screen is off (WifiLock + WakeLock)
+- Quick destination presets: `/data/homebrew`, `/data/etaHEN/games`, `/mnt/usb0`
+- Remembers your PS5 IP, port and destination path
 
-## البناء
-ارفع المشروع إلى GitHub، وسيبني workflow **Build APK** ملف الـ APK تلقائياً.
-تجده في تبويب Actions ← آخر تشغيل ← Artifacts ← `PlayBeam-debug`.
+## Requirements
+- A PS5 running an FTP server (e.g. etaHEN's FTP server or an FTP payload)
+- Phone and PS5 on the same local network
 
-أو محلياً عبر Android Studio: افتح المجلد ثم اضغط Run.
+## Download
+Grab the latest APK from the **Actions** tab → latest **Build APK** run → **Artifacts** → `PlayBeam-debug`.
 
-## هيكل الكود
-| الملف | الدور |
+## Building
+Every push to `main` builds the APK automatically with GitHub Actions.
+To build locally, open the project in Android Studio and press **Run**.
+
+## Code structure
+| File | Purpose |
 |---|---|
-| `MainActivity.kt` | الواجهة (Jetpack Compose) |
-| `FileScanner.kt` | قراءة الملفات والمجلدات المختارة |
-| `FtpUploader.kt` | الاتصال بالـ PS5 والرفع |
-| `UploadService.kt` | تشغيل الرفع في الخلفية + الإشعار |
-| `UploadState.kt` | حالة التقدّم المشتركة |
+| `MainActivity.kt` | User interface (Jetpack Compose) |
+| `FileScanner.kt` | Lists the selected files and folders |
+| `FtpUploader.kt` | Connects to the PS5 and uploads |
+| `UploadService.kt` | Runs the upload in the background + notification |
+| `UploadState.kt` | Shared upload progress |
 
-## الخطوات القادمة
-- [ ] اكتشاف الـ PS5 تلقائياً على الشبكة
-- [ ] استئناف الرفع بعد الانقطاع (FTP REST)
-- [ ] مستعرض ملفات الـ PS5
-- [ ] المشاركة من التطبيقات الأخرى (Share)
-- [ ] payload خاص على الـ PS5 لرفع أسرع 
+## Roadmap
+- [ ] Auto-discover the PS5 on the local network
+- [ ] Resume interrupted uploads (FTP REST)
+- [ ] PS5 file browser
+- [ ] Send files from other apps (Android share menu)
+- [ ] Dedicated PS5 payload for faster transfers

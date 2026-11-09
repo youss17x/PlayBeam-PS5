@@ -54,7 +54,7 @@ class UploadService : Service() {
 
         createChannel()
         ServiceCompat.startForeground(
-            this, NOTIF_ID, buildNotification("جارٍ التحضير…", 0, true),
+            this, NOTIF_ID, buildNotification("Preparing…", 0, true),
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         )
         acquireLocks()
@@ -65,7 +65,7 @@ class UploadService : Service() {
 
     private suspend fun runUpload(host: String, port: Int, remote: String, isTree: Boolean, uris: List<Uri>) {
         val state = UploadState.progress
-        state.value = Progress(running = true, message = "جارٍ فحص الملفات…")
+        state.value = Progress(running = true, message = "Scanning files…")
         val uploader = FtpUploader(this, host, port, remote)
         try {
             val scanner = FileScanner(this)
@@ -73,7 +73,7 @@ class UploadService : Service() {
             val files = entries.filter { !it.isDir }
             val totalBytes = files.sumOf { it.size }
             state.value = state.value.copy(totalFiles = files.size, totalBytes = totalBytes,
-                message = "جارٍ الاتصال بـ $host:$port…")
+                message = "Connecting to $host:$port…")
 
             uploader.connect()
 
@@ -98,11 +98,11 @@ class UploadService : Service() {
                 onFileDone = { state.value = state.value.copy(doneFiles = state.value.doneFiles + 1, doneBytes = done) },
             )
             state.value = state.value.copy(running = false, doneBytes = totalBytes,
-                message = "✅ اكتمل الرفع: ${files.size} ملف (${formatBytes(totalBytes)})")
+                message = "✅ Upload complete: ${files.size} files (${formatBytes(totalBytes)})")
         } catch (e: CancellationException) {
-            state.value = state.value.copy(running = false, message = "⏹ تم إيقاف الرفع")
+            state.value = state.value.copy(running = false, message = "⏹ Upload stopped")
         } catch (e: Exception) {
-            state.value = state.value.copy(running = false, message = "❌ خطأ: ${e.message}")
+            state.value = state.value.copy(running = false, message = "❌ Error: ${e.message}")
         } finally {
             uploader.disconnect()
             releaseLocks()
@@ -128,7 +128,7 @@ class UploadService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "رفع الملفات", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, "File uploads", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
@@ -143,14 +143,14 @@ class UploadService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("الرفع إلى PS5 — $percent%")
+            .setContentTitle("Uploading to PS5 — $percent%")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setProgress(100, percent, indeterminate)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
-            .addAction(0, "إيقاف", stop)
+            .addAction(0, "Stop", stop)
             .build()
     }
 
