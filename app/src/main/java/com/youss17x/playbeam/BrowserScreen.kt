@@ -1,5 +1,9 @@
 package com.youss17x.playbeam
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,8 +12,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private sealed interface BrowserDialog {
@@ -37,6 +44,60 @@ fun BrowserScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     var dialog by remember { mutableStateOf<BrowserDialog?>(null) }
+
+    // ---- download to phone ----
+    val ctx = LocalContext.current
+    val prefs = remember { Store.prefs(ctx) }
+    var downloadTree by remember { mutableStateOf(prefs.getString("downloadTree", null)?.let(Uri::parse)) }
+    var pendingDownload by remember { mutableStateOf<RemoteFile?>(null) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
+    var downloadName by remember { mutableStateOf("") }
+    var downloadBytes by remember { mutableLongStateOf(0L) }
+    var downloadMsg by remember { mutableStateOf<String?>(null) }
+
+    fun hasWriteAccess(uri: Uri) =
+        ctx.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
+
+    fun startDownload(f: RemoteFile, tree: Uri) {
+        val remote = joinPath(path, f.name)
+        downloadMsg = null
+        downloadBytes = 0
+        downloadName = f.name
+        downloadJob = scope.launch {
+            try {
+                session.download(ctx, remote, f.isDir, tree) { name, n ->
+                    downloadName = name
+                    downloadBytes += n
+                }
+                downloadMsg = "✅ ${f.name} saved to your phone (${formatBytes(downloadBytes)})"
+            } catch (e: CancellationException) {
+                downloadMsg = "⏹ Download stopped"
+            } catch (e: Exception) {
+                downloadMsg = "❌ ${e.message ?: "Download failed"}"
+            }
+            downloadJob = null
+        }
+    }
+
+    val pickDownloadFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }
+            prefs.edit().putString("downloadTree", uri.toString()).apply()
+            downloadTree = uri
+            pendingDownload?.let { startDownload(it, uri) }
+        }
+        pendingDownload = null
+    }
+
+    fun requestDownload(f: RemoteFile) {
+        val tree = downloadTree
+        if (tree != null && hasWriteAccess(tree)) startDownload(f, tree)
+        else { pendingDownload = f; pickDownloadFolder.launch(null) }
+    }
 
     LaunchedEffect(path, reloadKey) {
         loading = true
@@ -82,6 +143,27 @@ fun BrowserScreen(
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
+        if (downloadJob != null) {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                        Text("Downloading $downloadName", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(formatBytes(downloadBytes), style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { downloadJob?.cancel() }) { Text("Stop") }
+                }
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        }
+        downloadMsg?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        downloadTree?.let { tree ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Phone download folder: ${treeName(tree)}", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { pickDownloadFolder.launch(null) }) { Text("Change") }
+            }
+        }
+
         LazyColumn(Modifier.fillMaxSize()) {
             if (!loading && error == null && items.isEmpty()) {
                 item { Text("Empty folder", style = MaterialTheme.typography.bodySmall) }
@@ -92,6 +174,8 @@ fun BrowserScreen(
                     onOpen = { path = joinPath(path, f.name) },
                     onRename = { dialog = BrowserDialog.Rename(f) },
                     onDelete = { dialog = BrowserDialog.Delete(f) },
+                    onDownload = { requestDownload(f) },
+                    downloadEnabled = downloadJob == null,
                 )
                 HorizontalDivider()
             }
@@ -129,7 +213,14 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun FileRow(f: RemoteFile, onOpen: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
+private fun FileRow(
+    f: RemoteFile,
+    onOpen: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onDownload: () -> Unit,
+    downloadEnabled: Boolean,
+) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier
@@ -146,6 +237,8 @@ private fun FileRow(f: RemoteFile, onOpen: () -> Unit, onRename: () -> Unit, onD
         Box {
             TextButton(onClick = { menu = true }) { Text("⋮") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Download to phone") }, enabled = downloadEnabled,
+                    onClick = { menu = false; onDownload() })
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
             }

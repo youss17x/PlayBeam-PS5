@@ -23,103 +23,170 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Foreground service: keeps uploading when the screen is off or the app is in the background.
+ * Foreground service with an upload queue: keeps uploading when the screen is off
+ * or the app is in the background. Queue bookkeeping runs on the main thread only.
  */
 class UploadService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val pending = ArrayDeque<UploadJob>()
+    private var looping = false
+    private var currentJob: Job? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            job?.cancel()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> currentJob?.cancel()
+            ACTION_STOP_ALL -> {
+                pending.clear()
+                publishQueue()
+                currentJob?.cancel()
+            }
+            ACTION_REMOVE -> {
+                val id = intent.getLongExtra(EXTRA_JOB_ID, -1)
+                pending.removeAll { it.id == id }
+                publishQueue()
+            }
+            else -> intent?.let { jobFrom(it) }?.let { enqueue(it) }
         }
-        if (job?.isActive == true) return START_NOT_STICKY
-        intent ?: return START_NOT_STICKY
-
-        val host = intent.getStringExtra(EXTRA_HOST) ?: return START_NOT_STICKY
-        val port = intent.getIntExtra(EXTRA_PORT, 2121)
-        val remote = intent.getStringExtra(EXTRA_REMOTE) ?: "/data"
-        val isTree = intent.getBooleanExtra(EXTRA_IS_TREE, false)
-        val resume = intent.getBooleanExtra(EXTRA_RESUME, true)
-        val uris = IntentCompat.getParcelableArrayListExtra(intent, EXTRA_URIS, Uri::class.java)
-            ?: return START_NOT_STICKY
-
-        createChannel()
-        ServiceCompat.startForeground(
-            this, NOTIF_ID, buildNotification("Preparing…", 0, true),
-            if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-        )
-        acquireLocks()
-
-        job = scope.launch { runUpload(host, port, remote, isTree, resume, uris) }
+        if (!looping) stopSelf(startId)
         return START_NOT_STICKY
     }
 
-    private suspend fun runUpload(
-        host: String, port: Int, remote: String, isTree: Boolean, resume: Boolean, uris: List<Uri>,
-    ) {
+    private fun jobFrom(i: Intent): UploadJob? {
+        val uris = IntentCompat.getParcelableArrayListExtra(i, EXTRA_URIS, Uri::class.java) ?: return null
+        val host = i.getStringExtra(EXTRA_HOST) ?: return null
+        return UploadJob(
+            id = System.currentTimeMillis(),
+            label = i.getStringExtra(EXTRA_LABEL) ?: "Upload",
+            host = host,
+            port = i.getIntExtra(EXTRA_PORT, 2121),
+            remote = i.getStringExtra(EXTRA_REMOTE) ?: "/data",
+            isTree = i.getBooleanExtra(EXTRA_IS_TREE, false),
+            resume = i.getBooleanExtra(EXTRA_RESUME, true),
+            connections = i.getIntExtra(EXTRA_CONNECTIONS, 2),
+            uris = uris,
+        )
+    }
+
+    private fun enqueue(job: UploadJob) {
+        createChannels()
+        ServiceCompat.startForeground(
+            this, NOTIF_ID, buildProgressNotification(job.label, "Waiting…", 0, true),
+            if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
+        )
+        pending.addLast(job)
+        publishQueue()
+        if (!looping) {
+            looping = true
+            acquireLocks()
+            scope.launch { runQueue() }
+        }
+    }
+
+    /** Runs on Main; each upload itself runs on IO. */
+    private suspend fun runQueue() {
+        while (true) {
+            val job = pending.removeFirstOrNull() ?: break
+            publishQueue()
+            val j = scope.launch(Dispatchers.IO) { runUpload(job) }
+            currentJob = j
+            j.join()
+        }
+        currentJob = null
+        looping = false
+        releaseLocks()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun publishQueue() {
+        UploadState.queue.value = pending.toList()
+    }
+
+    private suspend fun runUpload(job: UploadJob) {
         val state = UploadState.progress
-        state.value = Progress(running = true, message = "Scanning files…")
-        val uploader = FtpUploader(this, host, port, remote)
+        val lock = Any()
+        val startTime = SystemClock.elapsedRealtime()
+        state.value = Progress(running = true, jobLabel = job.label, message = "Scanning files…")
+
+        var files = 0
+        var totalBytes = 0L
+        var skipped = 0L
+        var ok = false
+        var message = ""
         try {
             val scanner = FileScanner(this)
-            val entries = if (isTree) uris.flatMap { scanner.scanTree(it) } else scanner.scanFiles(uris)
-            val files = entries.filter { !it.isDir }
-            val totalBytes = files.sumOf { it.size }
-            state.value = state.value.copy(totalFiles = files.size, totalBytes = totalBytes,
-                message = "Connecting to $host:$port…")
+            val entries = if (job.isTree) job.uris.flatMap { scanner.scanTree(it) } else scanner.scanFiles(job.uris)
+            val fileEntries = entries.filter { !it.isDir }
+            files = fileEntries.size
+            totalBytes = fileEntries.sumOf { it.size }
+            state.value = state.value.copy(totalFiles = files, totalBytes = totalBytes,
+                message = "Connecting to ${job.host}:${job.port}…")
 
-            uploader.connect()
-
-            val startTime = SystemClock.elapsedRealtime()
-            var done = 0L      // progress bar (sent + skipped)
-            var sent = 0L      // really sent, for the speed
-            var skipped = 0L
+            var done = 0L   // progress bar (sent + skipped)
+            var sent = 0L   // really sent, for the speed
             var lastUi = 0L
-            fun refresh(force: Boolean = false) {
+            fun refresh(force: Boolean = false) { // call inside synchronized(lock)
                 val now = SystemClock.elapsedRealtime()
                 if (!force && now - lastUi < 300) return
                 lastUi = now
                 val secs = ((now - startTime) / 1000.0).coerceAtLeast(0.001)
                 val p = state.value.copy(doneBytes = done, speedBytesPerSec = (sent / secs).toLong())
                 state.value = p
-                notify("${p.currentFile}\n${formatBytes(p.speedBytesPerSec)}/s", (p.fraction * 100).toInt(), false)
+                val waiting = UploadState.queue.value.size
+                val queued = if (waiting > 0) " • $waiting waiting" else ""
+                notifyProgress(job.label, "${p.currentFile}\n${formatBytes(p.speedBytesPerSec)}/s$queued",
+                    (p.fraction * 100).toInt())
             }
-            uploader.upload(
-                entries,
-                resume = resume,
-                onFileStart = { e -> state.value = state.value.copy(currentFile = e.relativePath, message = "") },
-                onBytes = { n -> done += n; sent += n; refresh() },
-                onSkipped = { n -> done += n; skipped += n; refresh() },
-                onFileDone = {
-                    state.value = state.value.copy(doneFiles = state.value.doneFiles + 1, message = "")
-                    refresh(force = true)
-                },
-                onStatus = { msg -> state.value = state.value.copy(message = msg) },
+
+            FtpUploader(this, job.host, job.port, job.remote, job.connections).upload(
+                entries, job.resume,
+                UploadCallbacks(
+                    onFileStart = { e -> synchronized(lock) { state.value = state.value.copy(currentFile = e.relativePath) } },
+                    onBytes = { n -> synchronized(lock) { done += n; sent += n; refresh() } },
+                    onSkipped = { n -> synchronized(lock) { done += n; skipped += n; refresh() } },
+                    onFileDone = {
+                        synchronized(lock) {
+                            state.value = state.value.copy(doneFiles = state.value.doneFiles + 1, message = "")
+                            refresh(force = true)
+                        }
+                    },
+                    onStatus = { msg -> synchronized(lock) { state.value = state.value.copy(message = msg) } },
+                ),
             )
             val skippedNote = if (skipped > 0) " — ${formatBytes(skipped)} were already on the PS5" else ""
-            state.value = state.value.copy(running = false, doneBytes = totalBytes,
-                message = "✅ Upload complete: ${files.size} files (${formatBytes(totalBytes)})$skippedNote")
+            message = "✅ Upload complete: $files files (${formatBytes(totalBytes)})$skippedNote"
+            ok = true
         } catch (e: CancellationException) {
-            state.value = state.value.copy(running = false, message = "⏹ Upload stopped")
+            message = "⏹ Upload stopped"
         } catch (e: Exception) {
-            state.value = state.value.copy(running = false, message = "❌ Error: ${e.message}")
-        } finally {
-            uploader.disconnect()
-            releaseLocks()
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            message = "❌ Error: ${e.message}"
         }
+
+        val duration = SystemClock.elapsedRealtime() - startTime
+        state.value = state.value.copy(
+            running = false,
+            doneBytes = if (ok) totalBytes else state.value.doneBytes,
+            message = message,
+        )
+        Store.addHistory(this, HistoryEntry(
+            time = System.currentTimeMillis(), label = job.label,
+            destination = "${job.host}:${job.remote}", ok = ok, message = message,
+            bytes = totalBytes, files = files, durationMs = duration,
+        ))
+        UploadState.historyVersion.update { it + 1 }
+        notifyFinished(job, ok, message, duration)
     }
+
+    // ---- locks ----
 
     private fun acquireLocks() {
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -132,41 +199,64 @@ class UploadService : Service() {
     private fun releaseLocks() {
         wifiLock?.let { if (it.isHeld) it.release() }
         wakeLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
+        wakeLock = null
     }
 
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "File uploads", NotificationManager.IMPORTANCE_LOW)
-            )
-        }
+    // ---- notifications ----
+
+    private fun createChannels() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CH_PROGRESS, "Upload progress", NotificationManager.IMPORTANCE_LOW)
+        )
+        // Default importance → sound / vibration when an upload finishes
+        nm.createNotificationChannel(
+            NotificationChannel(CH_DONE, "Upload finished", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                enableVibration(true)
+            }
+        )
     }
 
-    private fun buildNotification(text: String, percent: Int, indeterminate: Boolean): Notification {
-        val stop = PendingIntent.getService(
-            this, 1, Intent(this, UploadService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-        return NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Uploading to PS5 — $percent%")
+    private fun openAppIntent() = PendingIntent.getActivity(
+        this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE
+    )
+
+    private fun serviceAction(action: String, code: Int) = PendingIntent.getService(
+        this, code, Intent(this, UploadService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE
+    )
+
+    private fun buildProgressNotification(title: String, text: String, percent: Int, indeterminate: Boolean): Notification {
+        val b = NotificationCompat.Builder(this, CH_PROGRESS)
+            .setSmallIcon(R.drawable.ic_stat_playbeam)
+            .setContentTitle(if (indeterminate) title else "$title — $percent%")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setProgress(100, percent, indeterminate)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(open)
-            .addAction(0, "Stop", stop)
-            .build()
+            .setContentIntent(openAppIntent())
+            .addAction(0, "Stop", serviceAction(ACTION_STOP, 1))
+        if (UploadState.queue.value.isNotEmpty()) b.addAction(0, "Stop all", serviceAction(ACTION_STOP_ALL, 2))
+        return b.build()
     }
 
-    private fun notify(text: String, percent: Int, indeterminate: Boolean) {
+    private fun notifyProgress(title: String, text: String, percent: Int) {
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, buildNotification(text, percent, indeterminate))
+            .notify(NOTIF_ID, buildProgressNotification(title, text, percent, false))
+    }
+
+    private fun notifyFinished(job: UploadJob, ok: Boolean, message: String, durationMs: Long) {
+        val n = NotificationCompat.Builder(this, CH_DONE)
+            .setSmallIcon(R.drawable.ic_stat_playbeam)
+            .setContentTitle(if (ok) "${job.label} sent to PS5" else "${job.label} — not completed")
+            .setContentText("$message • ${formatDuration(durationMs)}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$message • ${formatDuration(durationMs)}"))
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent())
+            .build()
+        getSystemService(NotificationManager::class.java).notify(1000 + (job.id % 1000).toInt(), n)
     }
 
     override fun onDestroy() {
@@ -177,13 +267,19 @@ class UploadService : Service() {
 
     companion object {
         const val ACTION_STOP = "stop"
+        const val ACTION_STOP_ALL = "stopAll"
+        const val ACTION_REMOVE = "remove"
+        const val EXTRA_JOB_ID = "jobId"
+        const val EXTRA_LABEL = "label"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
         const val EXTRA_REMOTE = "remote"
         const val EXTRA_URIS = "uris"
         const val EXTRA_IS_TREE = "isTree"
         const val EXTRA_RESUME = "resume"
-        private const val CHANNEL = "upload"
+        const val EXTRA_CONNECTIONS = "connections"
+        private const val CH_PROGRESS = "upload"
+        private const val CH_DONE = "done"
         private const val NOTIF_ID = 1
     }
 }

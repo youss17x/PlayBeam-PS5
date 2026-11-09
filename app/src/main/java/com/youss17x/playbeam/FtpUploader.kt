@@ -2,14 +2,21 @@ package com.youss17x.playbeam
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import org.apache.commons.net.ftp.FTPReply
 import java.io.IOException
 import java.io.InputStream
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 /** Opens an FTP connection to the PS5 with the settings PS5 FTP servers expect. */
 fun FTPClient.openPs5(host: String, port: Int) {
@@ -28,90 +35,130 @@ fun FTPClient.openPs5(host: String, port: Int) {
     soTimeout = 30_000
 }
 
+/** Callbacks may be called from several threads at once (one per connection). */
+class UploadCallbacks(
+    val onFileStart: (Entry) -> Unit,
+    /** Bytes really sent over the network. */
+    val onBytes: (Long) -> Unit,
+    /** Bytes not sent because they were already on the PS5 (negative if a retry must resend some). */
+    val onSkipped: (Long) -> Unit,
+    val onFileDone: (Entry) -> Unit,
+    val onStatus: (String) -> Unit,
+)
+
+/**
+ * Uploads to the PS5 over [connections] parallel FTP connections (1–4).
+ * Folders are created first, then files are shared between the connections.
+ */
 class FtpUploader(
     private val context: Context,
     private val host: String,
     private val port: Int,
     remoteBase: String,
+    connections: Int,
 ) {
     private val base = remoteBase.trimEnd('/')
-    private val ftp = FTPClient()
-    private val createdDirs = HashSet<String>()
+    private val wanted = connections.coerceIn(1, 4)
+    private val createdDirs: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
 
-    fun connect() = ftp.openPs5(host, port)
+    private fun remotePath(e: Entry) = "$base/${e.relativePath}"
 
-    fun disconnect() {
-        runCatching { if (ftp.isConnected) { ftp.logout(); ftp.disconnect() } }
-    }
+    suspend fun upload(entries: List<Entry>, resume: Boolean, cb: UploadCallbacks) = coroutineScope {
+        val dirs = entries.filter { it.isDir }
+        val files = entries.filter { !it.isDir }
 
-    private fun reconnect() {
-        runCatching { ftp.disconnect() }
-        ftp.openPs5(host, port)
-    }
+        val first = Worker().apply { connect() }
+        val workers = mutableListOf(first)
+        try {
+            for (d in dirs) {
+                currentCoroutineContext().ensureActive()
+                first.withRetry(cb) { first.mkdirs(remotePath(d)) }
+            }
 
-    /** Creates each folder of the path one by one (like mkdir -p). */
-    private fun mkdirs(path: String) {
-        var cur = ""
-        for (part in path.split('/').filter { it.isNotEmpty() }) {
-            cur += "/$part"
-            if (createdDirs.add(cur)) ftp.makeDirectory(cur) // fails harmlessly if it already exists
+            // Extra connections; if the PS5 refuses some, carry on with fewer.
+            val count = wanted.coerceAtMost(maxOf(1, files.size))
+            repeat(count - 1) {
+                runCatching { Worker().apply { connect() } }.getOrNull()?.let { workers += it }
+            }
+            if (workers.size < count) cb.onStatus("Using ${workers.size} connection(s)")
+
+            val queue = Channel<Entry>(Channel.UNLIMITED)
+            files.forEach { queue.trySend(it) }
+            queue.close()
+
+            workers.map { w ->
+                launch(Dispatchers.IO) {
+                    val buf = ByteArray(1 shl 20)
+                    for (e in queue) w.uploadFile(e, resume, cb, buf)
+                }
+            }.joinAll()
+        } finally {
+            workers.forEach { it.disconnect() }
         }
     }
 
-    /** Size of a file on the PS5, or -1 if it doesn't exist / the server doesn't support SIZE. */
-    private fun remoteSize(path: String): Long {
-        val code = ftp.sendCommand("SIZE", path)
-        if (code != 213) return -1
-        return ftp.replyString.trim().substringAfter(' ').trim().toLongOrNull() ?: -1
-    }
+    /** One FTP connection. */
+    private inner class Worker {
+        private val ftp = FTPClient()
 
-    /** Runs [block]; if the connection drops, reconnects and tries again (up to 3 times). */
-    private suspend fun withRetry(onStatus: (String) -> Unit, block: suspend () -> Unit) {
-        var attempt = 0
-        while (true) {
-            try {
-                block()
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                if (++attempt > MAX_RETRIES) throw e
-                onStatus("Connection lost — retrying ($attempt/$MAX_RETRIES)…")
-                delay(2_000L * attempt)
-                runCatching { reconnect() }
+        fun connect() = ftp.openPs5(host, port)
+
+        fun disconnect() {
+            runCatching { if (ftp.isConnected) { ftp.logout(); ftp.disconnect() } }
+        }
+
+        private fun reconnect() {
+            runCatching { ftp.disconnect() }
+            ftp.openPs5(host, port)
+        }
+
+        /** Creates each folder of the path one by one (like mkdir -p). */
+        fun mkdirs(path: String) {
+            var cur = ""
+            for (part in path.split('/').filter { it.isNotEmpty() }) {
+                cur += "/$part"
+                if (cur !in createdDirs) {
+                    ftp.makeDirectory(cur) // fails harmlessly if it already exists
+                    createdDirs += cur
+                }
             }
         }
-    }
 
-    /**
-     * Uploads every entry.
-     * [onBytes]: bytes really sent over the network.
-     * [onSkipped]: bytes not sent because they were already on the PS5 (can be negative
-     *              when a retry has to resend part of a file).
-     * If [resume] is true, files that already exist with the same size are skipped and
-     * partial files are continued (APPE) instead of starting over.
-     */
-    suspend fun upload(
-        entries: List<Entry>,
-        resume: Boolean,
-        onFileStart: (Entry) -> Unit,
-        onBytes: (Long) -> Unit,
-        onSkipped: (Long) -> Unit,
-        onFileDone: (Entry) -> Unit,
-        onStatus: (String) -> Unit,
-    ) {
-        val buf = ByteArray(1 shl 20)
-        for (e in entries) {
+        /** Size of a file on the PS5, or -1 if it doesn't exist / the server doesn't support SIZE. */
+        private fun remoteSize(path: String): Long {
+            val code = ftp.sendCommand("SIZE", path)
+            if (code != 213) return -1
+            return ftp.replyString.trim().substringAfter(' ').trim().toLongOrNull() ?: -1
+        }
+
+        /** Runs [block]; if the connection drops, reconnects and tries again (up to 3 times). */
+        suspend fun withRetry(cb: UploadCallbacks, block: suspend () -> Unit) {
+            var attempt = 0
+            while (true) {
+                try {
+                    block()
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    if (++attempt > MAX_RETRIES) throw e
+                    cb.onStatus("Connection lost — retrying ($attempt/$MAX_RETRIES)…")
+                    delay(2_000L * attempt)
+                    runCatching { reconnect() }
+                }
+            }
+        }
+
+        /**
+         * If [resume] is true, a file already on the PS5 with the same size is skipped and a
+         * partial one is continued (APPE) instead of starting over.
+         */
+        suspend fun uploadFile(e: Entry, resume: Boolean, cb: UploadCallbacks, buf: ByteArray) {
             currentCoroutineContext().ensureActive()
-            val remote = "$base/${e.relativePath}"
-            if (e.isDir) {
-                withRetry(onStatus) { mkdirs(remote) }
-                continue
-            }
-
-            onFileStart(e)
+            val remote = remotePath(e)
+            cb.onFileStart(e)
             var reported = 0L // bytes of this file already counted in the progress
-            withRetry(onStatus) {
+            withRetry(cb) {
                 mkdirs(remote.substringBeforeLast('/'))
 
                 val existing = if (resume || reported > 0) remoteSize(remote) else -1
@@ -120,7 +167,7 @@ class FtpUploader(
                     existing in 1 until e.size -> existing          // partial → continue
                     else -> 0L
                 }
-                onSkipped(offset - reported)
+                cb.onSkipped(offset - reported)
                 reported = offset
                 if (offset == e.size && e.size > 0) return@withRetry
 
@@ -137,7 +184,7 @@ class FtpUploader(
                             if (n < 0) break
                             os.write(buf, 0, n)
                             reported += n
-                            onBytes(n.toLong())
+                            cb.onBytes(n.toLong())
                         }
                     }
                 }
@@ -145,7 +192,7 @@ class FtpUploader(
                     throw IOException("Transfer failed for $remote: ${ftp.replyString?.trim()}")
                 }
             }
-            onFileDone(e)
+            cb.onFileDone(e)
         }
     }
 

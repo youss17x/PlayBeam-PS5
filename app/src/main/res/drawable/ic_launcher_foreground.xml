@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PlayBeam: a play triangle flying right with beam/speed lines behind it -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M33,42.5 L49,42.5 A2.5,2.5 0 0 1 49,47.5 L33,47.5 A2.5,2.5 0 0 1 33,42.5 Z" />
+    <path
+        android:fillColor="#81D4FA"
+        android:pathData="M28,51.5 L49,51.5 A2.5,2.5 0 0 1 49,56.5 L28,56.5 A2.5,2.5 0 0 1 28,51.5 Z" />
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M33,60.5 L49,60.5 A2.5,2.5 0 0 1 49,65.5 L33,65.5 A2.5,2.5 0 0 1 33,60.5 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M55,37 Q55,34 57.6,35.5 L80,51.4 Q82.5,54 80,56.6 L57.6,72.5 Q55,74 55,71 Z" />
+</vector>

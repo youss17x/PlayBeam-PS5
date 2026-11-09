@@ -1,6 +1,13 @@
 package com.youss17x.playbeam
 
+import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -72,6 +79,74 @@ class FtpSession(private val host: String, private val port: Int) {
             else if (!deleteFile(p)) throw IOException("Can't delete $p: ${replyString.trim()}")
         }
         if (!removeDirectory(dir)) throw IOException("Can't delete $dir: ${replyString.trim()}")
+    }
+
+    /**
+     * Copies a PS5 file or folder (recursively) into the phone folder [treeUri]
+     * (picked with OpenDocumentTree). [onBytes] is called with the file name and bytes received.
+     */
+    suspend fun download(
+        ctx: Context,
+        remotePath: String,
+        isDir: Boolean,
+        treeUri: Uri,
+        onBytes: (String, Long) -> Unit,
+    ) {
+        val job = currentCoroutineContext()[Job]
+        val root = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+        io {
+            try {
+                downloadInto(ctx, root, remotePath, isDir, onBytes) { job?.isActive == false }
+            } catch (e: CancellationException) {
+                // a transfer was cut in the middle: start from a fresh connection next time
+                runCatching { disconnect() }
+                throw e
+            }
+        }
+    }
+
+    private fun FTPClient.downloadInto(
+        ctx: Context,
+        parentDoc: Uri,
+        remotePath: String,
+        isDir: Boolean,
+        onBytes: (String, Long) -> Unit,
+        cancelled: () -> Boolean,
+    ) {
+        if (cancelled()) throw CancellationException("Download cancelled")
+        val cr = ctx.contentResolver
+        val name = remotePath.trimEnd('/').substringAfterLast('/').ifEmpty { "PS5" }
+        if (isDir) {
+            val dirDoc = DocumentsContract.createDocument(cr, parentDoc, DocumentsContract.Document.MIME_TYPE_DIR, name)
+                ?: throw IOException("Can't create folder $name on the phone")
+            val children = listFiles(remotePath).filterNotNull()
+                .filter { val n = it.name.substringAfterLast('/'); n != "." && n != ".." }
+            for (c in children) {
+                downloadInto(ctx, dirDoc, joinPath(remotePath, c.name.substringAfterLast('/')),
+                    c.isDirectory, onBytes, cancelled)
+            }
+        } else {
+            val ext = name.substringAfterLast('.', "").lowercase()
+            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+            val fileDoc = DocumentsContract.createDocument(cr, parentDoc, mime, name)
+                ?: throw IOException("Can't create $name on the phone")
+            val out = cr.openOutputStream(fileDoc) ?: throw IOException("Can't write $name on the phone")
+            out.use { os ->
+                val ins = retrieveFileStream(remotePath)
+                    ?: throw IOException("Can't read $remotePath: ${replyString.trim()}")
+                ins.use {
+                    val buf = ByteArray(1 shl 20)
+                    while (true) {
+                        if (cancelled()) throw CancellationException("Download cancelled")
+                        val n = it.read(buf)
+                        if (n < 0) break
+                        os.write(buf, 0, n)
+                        onBytes(name, n.toLong())
+                    }
+                }
+            }
+            if (!completePendingCommand()) throw IOException("Download of $name failed: ${replyString.trim()}")
+        }
     }
 
     fun closeAsync() {

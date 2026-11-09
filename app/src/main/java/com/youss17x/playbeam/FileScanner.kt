@@ -77,3 +77,14 @@ class FileScanner(private val context: Context) {
             if (c.moveToFirst()) c.getString(0) else null
         }
 }
+
+/** File name of a single document (picked or shared), or null. */
+fun displayName(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0) else null
+    }
+}.getOrNull()
+
+/** Name of a folder picked with OpenDocumentTree. */
+fun treeName(uri: Uri): String =
+    Uri.decode(uri.lastPathSegment ?: "").substringAfterLast(':').substringAfterLast('/').ifEmpty { "Folder" }
