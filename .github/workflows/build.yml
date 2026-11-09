@@ -1,9 +1,7 @@
 name: Build APK
 
+# Manual builds only: Actions tab → Build APK → Run workflow
 on:
-  push:
-    branches: [ main ]
-  pull_request:
   workflow_dispatch:
 
 jobs:

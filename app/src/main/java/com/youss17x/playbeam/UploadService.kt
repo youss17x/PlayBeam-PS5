@@ -49,6 +49,7 @@ class UploadService : Service() {
         val port = intent.getIntExtra(EXTRA_PORT, 2121)
         val remote = intent.getStringExtra(EXTRA_REMOTE) ?: "/data"
         val isTree = intent.getBooleanExtra(EXTRA_IS_TREE, false)
+        val resume = intent.getBooleanExtra(EXTRA_RESUME, true)
         val uris = IntentCompat.getParcelableArrayListExtra(intent, EXTRA_URIS, Uri::class.java)
             ?: return START_NOT_STICKY
 
@@ -59,11 +60,13 @@ class UploadService : Service() {
         )
         acquireLocks()
 
-        job = scope.launch { runUpload(host, port, remote, isTree, uris) }
+        job = scope.launch { runUpload(host, port, remote, isTree, resume, uris) }
         return START_NOT_STICKY
     }
 
-    private suspend fun runUpload(host: String, port: Int, remote: String, isTree: Boolean, uris: List<Uri>) {
+    private suspend fun runUpload(
+        host: String, port: Int, remote: String, isTree: Boolean, resume: Boolean, uris: List<Uri>,
+    ) {
         val state = UploadState.progress
         state.value = Progress(running = true, message = "Scanning files…")
         val uploader = FtpUploader(this, host, port, remote)
@@ -78,27 +81,34 @@ class UploadService : Service() {
             uploader.connect()
 
             val startTime = SystemClock.elapsedRealtime()
-            var done = 0L
+            var done = 0L      // progress bar (sent + skipped)
+            var sent = 0L      // really sent, for the speed
+            var skipped = 0L
             var lastUi = 0L
+            fun refresh(force: Boolean = false) {
+                val now = SystemClock.elapsedRealtime()
+                if (!force && now - lastUi < 300) return
+                lastUi = now
+                val secs = ((now - startTime) / 1000.0).coerceAtLeast(0.001)
+                val p = state.value.copy(doneBytes = done, speedBytesPerSec = (sent / secs).toLong())
+                state.value = p
+                notify("${p.currentFile}\n${formatBytes(p.speedBytesPerSec)}/s", (p.fraction * 100).toInt(), false)
+            }
             uploader.upload(
                 entries,
+                resume = resume,
                 onFileStart = { e -> state.value = state.value.copy(currentFile = e.relativePath, message = "") },
-                onBytes = { n ->
-                    done += n
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastUi > 300) {
-                        lastUi = now
-                        val secs = ((now - startTime) / 1000.0).coerceAtLeast(0.001)
-                        val p = state.value.copy(doneBytes = done, speedBytesPerSec = (done / secs).toLong())
-                        state.value = p
-                        notify("${p.currentFile}\n${formatBytes(p.speedBytesPerSec)}/s",
-                            (p.fraction * 100).toInt(), false)
-                    }
+                onBytes = { n -> done += n; sent += n; refresh() },
+                onSkipped = { n -> done += n; skipped += n; refresh() },
+                onFileDone = {
+                    state.value = state.value.copy(doneFiles = state.value.doneFiles + 1, message = "")
+                    refresh(force = true)
                 },
-                onFileDone = { state.value = state.value.copy(doneFiles = state.value.doneFiles + 1, doneBytes = done) },
+                onStatus = { msg -> state.value = state.value.copy(message = msg) },
             )
+            val skippedNote = if (skipped > 0) " — ${formatBytes(skipped)} were already on the PS5" else ""
             state.value = state.value.copy(running = false, doneBytes = totalBytes,
-                message = "✅ Upload complete: ${files.size} files (${formatBytes(totalBytes)})")
+                message = "✅ Upload complete: ${files.size} files (${formatBytes(totalBytes)})$skippedNote")
         } catch (e: CancellationException) {
             state.value = state.value.copy(running = false, message = "⏹ Upload stopped")
         } catch (e: Exception) {
@@ -172,6 +182,7 @@ class UploadService : Service() {
         const val EXTRA_REMOTE = "remote"
         const val EXTRA_URIS = "uris"
         const val EXTRA_IS_TREE = "isTree"
+        const val EXTRA_RESUME = "resume"
         private const val CHANNEL = "upload"
         private const val NOTIF_ID = 1
     }
