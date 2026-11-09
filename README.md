@@ -2,11 +2,12 @@
 
 An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
 
-## Features (v0.1)
+## Features (v0.2)
 - Pick a whole folder (including all subfolders) or multiple files
 - Background upload (foreground service) with a progress notification and a Stop button
 - Keeps uploading when the screen is off (WifiLock + WakeLock)
 - Quick destination presets: `/data/homebrew`, `/data/etaHEN/games`, `/mnt/usb0`
+- **Find my PS5**: scans the local network for the PS5 FTP server — no need to type the IP
 - Remembers your PS5 IP, port and destination path
 
 ## Requirements
@@ -30,7 +31,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `UploadState.kt` | Shared upload progress |
 
 ## Roadmap
-- [ ] Auto-discover the PS5 on the local network
+- [x] Auto-discover the PS5 on the local network
 - [ ] Resume interrupted uploads (FTP REST)
 - [ ] PS5 file browser
 - [ ] Send files from other apps (Android share menu)

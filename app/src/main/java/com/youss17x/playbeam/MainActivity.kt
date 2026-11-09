@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,12 +38,19 @@ class MainActivity : ComponentActivity() {
 
 private val PRESETS = listOf("/data/homebrew", "/data/etaHEN/games", "/mnt/usb0")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UploadScreen() {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    val scope = rememberCoroutineScope()
 
-    var host by remember { mutableStateOf(prefs.getString("host", "192.168.1.185")!!) }
+    var scanning by remember { mutableStateOf(false) }
+    var scanProgress by remember { mutableFloatStateOf(0f) }
+    var found by remember { mutableStateOf<List<FoundDevice>?>(null) }
+    var scanError by remember { mutableStateOf<String?>(null) }
+
+    var host by remember { mutableStateOf(prefs.getString("host", "")!!) }
     var port by remember { mutableStateOf(prefs.getString("port", "2121")!!) }
     var remote by remember { mutableStateOf(prefs.getString("remote", "/data/homebrew")!!) }
 
@@ -87,6 +95,44 @@ fun UploadScreen() {
             OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") },
                 singleLine = true, modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
+
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    scanning = true; found = null; scanError = null; scanProgress = 0f
+                    try {
+                        found = PS5Discovery.scan(ctx) { scanProgress = it }
+                    } catch (e: Exception) {
+                        scanError = e.message ?: "Search failed"
+                    }
+                    scanning = false
+                }
+            },
+            enabled = !scanning,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (scanning) "Searching… ${(scanProgress * 100).toInt()}%" else "🔍 Find my PS5") }
+
+        if (scanning) LinearProgressIndicator(progress = { scanProgress }, modifier = Modifier.fillMaxWidth())
+        scanError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        found?.let { list ->
+            if (list.isEmpty()) {
+                Text("No FTP server found. Make sure the FTP server is running on your PS5 and both devices are on the same Wi-Fi.",
+                    style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Tap your PS5:", style = MaterialTheme.typography.bodyMedium)
+                list.forEach { d ->
+                    Card(onClick = {
+                        host = d.host; port = d.port.toString(); found = null
+                        prefs.edit().putString("host", host).putString("port", port).apply()
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text("${d.host}:${d.port}", style = MaterialTheme.typography.titleMedium)
+                            if (d.banner.isNotEmpty()) Text(d.banner, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
         }
 
         OutlinedTextField(remote, { remote = it }, label = { Text("Destination path on PS5") },
