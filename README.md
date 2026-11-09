@@ -2,7 +2,7 @@
 
 An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
 
-## Features (v0.5)
+## Features (v0.6)
 
 Clean, bright **Pearl** design: settings-style cards, one-tap console and destination sheets.
 
@@ -17,6 +17,12 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Sound / vibration notification when an upload finishes
 - **History** of past uploads (size, files, duration, errors)
 
+**PlayBeam Server** (PS5 payload, built into the app)
+- Start it from the app with one tap (**Payload → Start on PS5**)
+- Faster uploads than FTP; the app uses it automatically when it's running
+- **Extracts ZIP files on the PS5** after uploading (and deletes the .zip)
+- Source and protocol: [`payload/`](payload/)
+
 **PS5**
 - **Find my PS5**: scans the local network for the PS5 FTP server — no need to type the IP
 - **Saved consoles**: keep several PS5s by name and switch with one tap
@@ -27,7 +33,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Quick destination presets: `/data/homebrew`, `/data/etaHEN/games`, `/mnt/usb0`
 
 ## Requirements
-- A jailbroken PS5 running an FTP server (e.g. etaHEN's FTP server or an FTP payload)
+- A jailbroken PS5 with an ELF loader (for PlayBeam Server) and/or an FTP server (e.g. etaHEN's)
 - Phone and PS5 on the same local network
 - Android 8.0 or newer
 
@@ -50,6 +56,8 @@ To build locally, open the project in Android Studio and press **Run**.
 | `FtpUploader.kt` | Parallel FTP upload with resume and retries |
 | `FtpSession.kt` | FTP commands used by the browser (list, create, rename, delete, download) |
 | `PS5Discovery.kt` | Finds the PS5 on the local network |
+| `ServerClient.kt` | PlayBeam Server client and uploader |
+| `payload/` | PlayBeam Server PS5 payload (C, PS5 Payload SDK) |
 | `FileScanner.kt` | Lists the selected files and folders |
 | `Store.kt` | Saved consoles, history and recent payloads |
 | `UploadState.kt` | Shared upload progress and queue |
@@ -61,4 +69,4 @@ To build locally, open the project in Android Studio and press **Run**.
 - [x] Send files from other apps (Android share menu)
 - [x] Parallel uploads, upload queue, history
 - [x] Payload sender
-- [ ] Dedicated PS5 payload: faster transfers and extracting zip / rar directly on the PS5
+- [x] PlayBeam Server payload: faster transfers and ZIP extraction on the PS5

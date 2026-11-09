@@ -22,7 +22,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -72,6 +76,7 @@ class UploadService : Service() {
             isTree = i.getBooleanExtra(EXTRA_IS_TREE, false),
             resume = i.getBooleanExtra(EXTRA_RESUME, true),
             connections = i.getIntExtra(EXTRA_CONNECTIONS, 2),
+            extractZips = i.getBooleanExtra(EXTRA_EXTRACT_ZIPS, false),
             uris = uris,
         )
     }
@@ -129,7 +134,13 @@ class UploadService : Service() {
             files = fileEntries.size
             totalBytes = fileEntries.sumOf { it.size }
             state.value = state.value.copy(totalFiles = files, totalBytes = totalBytes,
-                message = "Connecting to ${job.host}:${job.port}…")
+                message = "Connecting to ${job.host}…")
+
+            // PlayBeam Server payload if it is running on the PS5 (faster), otherwise FTP
+            val viaServer = ServerClient.isRunning(job.host)
+            val uploader: Uploader =
+                if (viaServer) ServerUploader(this, job.host, job.remote, job.connections)
+                else FtpUploader(this, job.host, job.port, job.remote, job.connections)
 
             var done = 0L   // progress bar (sent + skipped)
             var sent = 0L   // really sent, for the speed
@@ -147,7 +158,7 @@ class UploadService : Service() {
                     (p.fraction * 100).toInt())
             }
 
-            FtpUploader(this, job.host, job.port, job.remote, job.connections).upload(
+            uploader.upload(
                 entries, job.resume,
                 UploadCallbacks(
                     onFileStart = { e -> synchronized(lock) { state.value = state.value.copy(currentFile = e.relativePath) } },
@@ -162,13 +173,40 @@ class UploadService : Service() {
                     onStatus = { msg -> synchronized(lock) { state.value = state.value.copy(message = msg) } },
                 ),
             )
+            // ---- extract uploaded .zip files on the PS5 ----
+            var zipNote = ""
+            val zips = fileEntries.filter { it.relativePath.endsWith(".zip", ignoreCase = true) }
+            if (job.extractZips && zips.isNotEmpty()) {
+                if (!viaServer) {
+                    zipNote = " — ZIPs not extracted (start PlayBeam Server for that)"
+                } else {
+                    var extracted = 0
+                    for ((n, z) in zips.withIndex()) {
+                        val remoteZip = "${job.remote.trimEnd('/')}/${z.relativePath}"
+                        val dest = remoteZip.substringBeforeLast('/').ifEmpty { "/" }
+                        val name = z.relativePath.substringAfterLast('/')
+                        extracted += extractOnPs5(job.host, remoteZip, dest) { done, total ->
+                            val pct = if (total > 0) (done * 100 / total).toInt() else 0
+                            synchronized(lock) {
+                                state.value = state.value.copy(currentFile = name,
+                                    message = "Extracting $name (${n + 1}/${zips.size}) — $pct%")
+                            }
+                            notifyProgress(job.label, "Extracting $name", pct)
+                        }
+                    }
+                    zipNote = " — extracted $extracted files from ${zips.size} ZIP(s)"
+                }
+            }
+
             val skippedNote = if (skipped > 0) " — ${formatBytes(skipped)} were already on the PS5" else ""
-            message = "✅ Upload complete: $files files (${formatBytes(totalBytes)})$skippedNote"
+            val via = if (viaServer) " via PlayBeam Server" else ""
+            message = "✅ Upload complete$via: $files files (${formatBytes(totalBytes)})$skippedNote$zipNote"
             ok = true
         } catch (e: CancellationException) {
             message = "⏹ Upload stopped"
         } catch (e: Exception) {
-            message = "❌ Error: ${e.message}"
+            // a socket closed by Stop shows up as an IOException
+            message = if (!currentCoroutineContext().isActive) "⏹ Upload stopped" else "❌ Error: ${e.message}"
         }
 
         val duration = SystemClock.elapsedRealtime() - startTime
@@ -185,6 +223,24 @@ class UploadService : Service() {
         UploadState.historyVersion.update { it + 1 }
         notifyFinished(job, ok, message, duration)
     }
+
+    /** Extracts one ZIP on the PS5 then deletes it. Stopping the upload closes the connection. */
+    private suspend fun extractOnPs5(host: String, zip: String, dest: String, onProgress: (Long, Long) -> Unit): Int =
+        coroutineScope {
+            val client = ServerClient(host)
+            var finished = false
+            val watcher = launch { try { awaitCancellation() } finally { if (!finished) client.close() } }
+            try {
+                client.use {
+                    val count = it.unzip(zip, dest, onProgress)
+                    it.rm(zip)
+                    count
+                }
+            } finally {
+                finished = true
+                watcher.cancel()
+            }
+        }
 
     // ---- locks ----
 
@@ -278,6 +334,7 @@ class UploadService : Service() {
         const val EXTRA_IS_TREE = "isTree"
         const val EXTRA_RESUME = "resume"
         const val EXTRA_CONNECTIONS = "connections"
+        const val EXTRA_EXTRACT_ZIPS = "extractZips"
         private const val CH_PROGRESS = "upload"
         private const val CH_DONE = "done"
         private const val NOTIF_ID = 1

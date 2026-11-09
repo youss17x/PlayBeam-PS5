@@ -4,12 +4,34 @@ name: Build APK
 on:
   workflow_dispatch:
 
+env:
+  # pinned ps5-payload-dev/sdk commit
+  PS5_SDK_REF: 8816aee4cd88fc47b07819d2b6f4769c095a074b
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # ---- PS5 payload (PlayBeam Server) ----
+      - name: Install PS5 payload SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18
+          mkdir /tmp/ps5sdk-src && cd /tmp/ps5sdk-src
+          git init -q
+          git fetch -q --depth 1 https://github.com/ps5-payload-dev/sdk "$PS5_SDK_REF"
+          git checkout -q FETCH_HEAD
+          make -j4 DESTDIR="$HOME/ps5sdk" install
+
+      - name: Build PlayBeam Server payload
+        run: |
+          make -C payload PS5_PAYLOAD_SDK="$HOME/ps5sdk"
+          mkdir -p app/src/main/assets
+          cp payload/playbeam-server.elf app/src/main/assets/
+
+      # ---- Android app ----
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,3 +49,8 @@ jobs:
         with:
           name: PlayBeam-debug
           path: app/build/outputs/apk/debug/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playbeam-server-elf
+          path: payload/playbeam-server.elf

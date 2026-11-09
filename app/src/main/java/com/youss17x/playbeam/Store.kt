@@ -19,6 +19,7 @@ data class UploadJob(
     val isTree: Boolean,
     val resume: Boolean,
     val connections: Int,
+    val extractZips: Boolean,
     val uris: List<Uri>,
 )
 

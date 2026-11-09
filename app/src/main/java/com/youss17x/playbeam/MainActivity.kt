@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -86,6 +87,7 @@ class AppState(private val prefs: SharedPreferences) {
     var remote by mutableStateOf(prefs.getString("remote", "/data/homebrew")!!)
     var resume by mutableStateOf(prefs.getBoolean("resume", true))
     var connections by mutableIntStateOf(prefs.getInt("connections", 2))
+    var extractZips by mutableStateOf(prefs.getBoolean("extractZips", true))
 
     var selected by mutableStateOf<List<Uri>>(emptyList())
     var isTree by mutableStateOf(true)
@@ -98,6 +100,7 @@ class AppState(private val prefs: SharedPreferences) {
         .putString("remote", remote.trim())
         .putBoolean("resume", resume)
         .putInt("connections", connections)
+        .putBoolean("extractZips", extractZips)
         .apply()
 }
 
@@ -182,6 +185,15 @@ fun UploadScreen(state: AppState, onBrowse: () -> Unit) {
 
     val currentConsole = consoles.firstOrNull { it.host == state.host.trim() && it.port == state.portInt }
 
+    // is the PlayBeam Server payload running? (checked every few seconds)
+    var serverUp by remember { mutableStateOf(false) }
+    LaunchedEffect(state.host) {
+        while (true) {
+            serverUp = ServerClient.isRunning(state.host.trim())
+            delay(8_000)
+        }
+    }
+
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) { state.selected = listOf(uri); state.isTree = true }
     }
@@ -213,6 +225,7 @@ fun UploadScreen(state: AppState, onBrowse: () -> Unit) {
             .putExtra(UploadService.EXTRA_IS_TREE, state.isTree)
             .putExtra(UploadService.EXTRA_RESUME, state.resume)
             .putExtra(UploadService.EXTRA_CONNECTIONS, state.connections)
+            .putExtra(UploadService.EXTRA_EXTRACT_ZIPS, state.extractZips)
             .putParcelableArrayListExtra(UploadService.EXTRA_URIS, uris)
             // pass read access on (needed for files shared from other apps)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -293,9 +306,14 @@ fun UploadScreen(state: AppState, onBrowse: () -> Unit) {
             SettingsRow("Console", currentConsole?.name ?: state.host.trim().ifBlank { "Not set" },
                 onClick = { showConsole = true })
             SettingsRow("Destination", state.remote.ifBlank { "/" }, onClick = { showDestination = true })
+            SettingsRow("Transfer", if (serverUp) "PlayBeam Server" else "FTP",
+                subtitle = if (serverUp) "Fastest — server running on the PS5" else "Start PlayBeam Server in Payload for faster uploads")
             SettingsRow("Resume unfinished files", trailing = {
                 PearlSwitch(state.resume) { state.resume = it; state.save() }
             })
+            SettingsRow("Extract ZIPs on PS5",
+                subtitle = "Unzips uploaded .zip files, then deletes the .zip (needs PlayBeam Server)",
+                trailing = { PearlSwitch(state.extractZips) { state.extractZips = it; state.save() } })
             SettingsRow("Connections", divider = false, trailing = {
                 NumberPicker((1..4).toList(), state.connections) { state.connections = it; state.save() }
             })
@@ -472,14 +490,18 @@ private fun ConsoleSheet(
             scanError?.let { Text(it, color = Pearl.Error, style = MaterialTheme.typography.bodyMedium) }
             found?.let { list ->
                 if (list.isEmpty()) {
-                    Text("No FTP server found. Make sure the FTP server is running on your PS5 and both devices are on the same Wi-Fi.",
+                    Text("No PS5 found. Make sure PlayBeam Server or an FTP server is running on your PS5 and both devices are on the same Wi-Fi.",
                         style = MaterialTheme.typography.bodySmall)
                 } else {
                     SectionLabel("Found on your network")
                     PearlCard {
                         list.forEachIndexed { idx, d ->
-                            SettingsRow("${d.host}:${d.port}", d.banner.ifBlank { null },
-                                onClick = { use(d.host, d.port); found = null },
+                            val what = listOfNotNull(
+                                if (d.server) "PlayBeam Server" else null,
+                                d.ftpPort?.let { "FTP $it" },
+                            ).joinToString(" · ")
+                            SettingsRow(d.host, what, subtitle = d.banner.ifBlank { null },
+                                onClick = { use(d.host, d.ftpPort ?: state.portInt); found = null },
                                 divider = idx < list.lastIndex)
                         }
                     }

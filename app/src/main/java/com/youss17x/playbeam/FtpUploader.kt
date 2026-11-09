@@ -56,14 +56,14 @@ class FtpUploader(
     private val port: Int,
     remoteBase: String,
     connections: Int,
-) {
+) : Uploader {
     private val base = remoteBase.trimEnd('/')
     private val wanted = connections.coerceIn(1, 4)
     private val createdDirs: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
 
     private fun remotePath(e: Entry) = "$base/${e.relativePath}"
 
-    suspend fun upload(entries: List<Entry>, resume: Boolean, cb: UploadCallbacks) = coroutineScope {
+    override suspend fun upload(entries: List<Entry>, resume: Boolean, cb: UploadCallbacks) = coroutineScope {
         val dirs = entries.filter { it.isDir }
         val files = entries.filter { !it.isDir }
 

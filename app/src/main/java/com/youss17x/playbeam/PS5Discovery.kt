@@ -14,16 +14,21 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
 
-data class FoundDevice(val host: String, val port: Int, val banner: String)
+/**
+ * A device found on the network.
+ * [ftpPort] is null when only the PlayBeam Server answered.
+ */
+data class FoundDevice(val host: String, val ftpPort: Int?, val banner: String, val server: Boolean)
 
 /**
- * Finds FTP servers on the local network (the PS5 FTP server of etaHEN / FTP payloads).
- * Scans every address of the phone's /24 subnet on the usual PS5 FTP ports.
+ * Finds PS5s on the local network: the PlayBeam Server payload (port 9113)
+ * and FTP servers (etaHEN / FTP payloads) on the usual ports.
+ * Scans every address of the phone's /24 subnet.
  */
 object PS5Discovery {
 
-    /** Most likely PS5 ports first. */
-    private val PORTS = listOf(2121, 1337, 21)
+    /** Most likely PS5 FTP ports first. */
+    private val FTP_PORTS = listOf(2121, 1337, 21)
 
     private fun localIpv4(context: Context): String? {
         val cm = context.getSystemService(ConnectivityManager::class.java)
@@ -52,23 +57,38 @@ object PS5Discovery {
             }
         }.awaitAll()
             .filterNotNull()
-            .sortedWith(compareBy({ PORTS.indexOf(it.port) }, { it.host.substringAfterLast('.').toInt() }))
+            .sortedWith(compareBy({ !it.server }, { it.host.substringAfterLast('.').toInt() }))
     }
 
     private fun probeHost(host: String): FoundDevice? {
-        for (port in PORTS) probe(host, port)?.let { return it }
-        return null
+        val server = probeServer(host)
+        var ftp: Pair<Int, String>? = null
+        for (port in FTP_PORTS) {
+            probeFtp(host, port)?.let { ftp = port to it }
+            if (ftp != null) break
+        }
+        if (!server && ftp == null) return null
+        return FoundDevice(host, ftp?.first, ftp?.second.orEmpty(), server)
+    }
+
+    private fun probeServer(host: String): Boolean = try {
+        Socket().use { s ->
+            s.connect(InetSocketAddress(host, SERVER_PORT), 300)
+            s.soTimeout = 1500
+            s.getOutputStream().write("HELLO\n".toByteArray())
+            s.getInputStream().bufferedReader().readLine().orEmpty().startsWith("OK PlayBeam")
+        }
+    } catch (e: Exception) {
+        false
     }
 
     /** Connects and reads the FTP greeting ("220 ..."). Anything else is ignored. */
-    private fun probe(host: String, port: Int): FoundDevice? = try {
+    private fun probeFtp(host: String, port: Int): String? = try {
         Socket().use { s ->
             s.connect(InetSocketAddress(host, port), 300)
             s.soTimeout = 1500
             val line = s.getInputStream().bufferedReader().readLine().orEmpty()
-            if (line.startsWith("220")) {
-                FoundDevice(host, port, line.removePrefix("220").trimStart('-', ' ').trim())
-            } else null
+            if (line.startsWith("220")) line.removePrefix("220").trimStart('-', ' ').trim() else null
         }
     } catch (e: Exception) {
         null

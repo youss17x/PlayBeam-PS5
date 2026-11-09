@@ -160,6 +160,7 @@ fun SettingsRow(
     label: String,
     value: String? = null,
     onClick: (() -> Unit)? = null,
+    subtitle: String? = null,
     divider: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
 ) {
@@ -173,7 +174,10 @@ fun SettingsRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = Pearl.Ink, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f).padding(vertical = if (subtitle != null) 10.dp else 0.dp)) {
+                Text(label, style = MaterialTheme.typography.bodyLarge, color = Pearl.Ink)
+                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall)
+            }
             if (value != null) {
                 Text(value, style = MaterialTheme.typography.bodyMedium, color = Pearl.Muted, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 190.dp))

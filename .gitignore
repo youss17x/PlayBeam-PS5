@@ -4,3 +4,5 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+payload/*.elf
+app/src/main/assets/playbeam-server.elf

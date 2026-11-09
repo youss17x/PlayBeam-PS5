@@ -1,0 +1,436 @@
+/* PlayBeam Server — PS5 payload that receives files from the PlayBeam Android app.
+
+   Simple line protocol over TCP (port 9113). Each command is one line ending in '\n';
+   paths are absolute and are always the rest of the line.
+
+     HELLO                         -> OK PlayBeam-Server <version>
+     MKDIR <path>                  -> OK | ERR <reason>          (like mkdir -p)
+     SIZE <path>                   -> OK <bytes>  (OK -1 if missing)
+     PUT <offset> <length> <path>  -> READY, then the client sends <length> raw bytes,
+                                      then OK | ERR <reason>
+                                      offset 0 creates/truncates, offset > 0 continues a file
+     UNZIP <zip>\t<dest dir>       -> PROG <done> <total> lines while extracting,
+                                      then OK <files> | ERR <reason>
+     RM <path>                     -> OK | ERR <reason>          (removes one file)
+     QUIT                          -> closes this connection
+     SHUTDOWN                      -> OK, then the server exits
+
+   Every connection runs in its own thread, so the app can upload over several
+   connections at once. ZIP extraction uses miniz (MIT licence, see miniz-LICENSE). */
+
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <pthread.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "miniz.h"
+
+#define SERVER_VERSION "1.0"
+#define SERVER_PORT 9113
+#define LINE_MAX_LEN 4096
+#define IO_BUF_SIZE (4 * 1024 * 1024)
+#define SOCK_BUF_SIZE (4 * 1024 * 1024)
+
+/* ---------------------------------------------------------------- notifications */
+
+typedef struct notify_request {
+  char useless1[45];
+  char message[3075];
+} notify_request_t;
+
+int sceKernelSendNotificationRequest(int, notify_request_t *, size_t, int);
+
+static void notify(const char *fmt, ...) {
+  notify_request_t req;
+  va_list ap;
+
+  bzero(&req, sizeof req);
+  va_start(ap, fmt);
+  vsnprintf(req.message, sizeof req.message, fmt, ap);
+  va_end(ap);
+  sceKernelSendNotificationRequest(0, &req, sizeof req, 0);
+}
+
+/* ---------------------------------------------------------------- connection i/o */
+
+typedef struct conn {
+  int fd;
+  char rbuf[64 * 1024]; /* bytes already received but not consumed yet */
+  size_t rlen;
+  size_t rpos;
+  char *io; /* IO_BUF_SIZE scratch buffer */
+} conn_t;
+
+static int write_all(int fd, const void *data, size_t len) {
+  const char *p = data;
+  while (len > 0) {
+    ssize_t n = write(fd, p, len);
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      return -1;
+    }
+    p += n;
+    len -= (size_t)n;
+  }
+  return 0;
+}
+
+static int send_line(conn_t *c, const char *fmt, ...) {
+  char line[LINE_MAX_LEN + 64];
+  va_list ap;
+  int n;
+
+  va_start(ap, fmt);
+  n = vsnprintf(line, sizeof line - 1, fmt, ap);
+  va_end(ap);
+  if (n < 0) return -1;
+  if ((size_t)n > sizeof line - 2) n = (int)(sizeof line - 2);
+  line[n++] = '\n';
+  return write_all(c->fd, line, (size_t)n);
+}
+
+/* Reads up to len bytes, first from the line buffer, then from the socket. */
+static ssize_t conn_read(conn_t *c, void *dst, size_t len) {
+  if (c->rpos < c->rlen) {
+    size_t avail = c->rlen - c->rpos;
+    if (avail > len) avail = len;
+    memcpy(dst, c->rbuf + c->rpos, avail);
+    c->rpos += avail;
+    return (ssize_t)avail;
+  }
+  for (;;) {
+    ssize_t n = recv(c->fd, dst, len, 0);
+    if (n < 0 && errno == EINTR) continue;
+    return n;
+  }
+}
+
+/* Reads one '\n'-terminated line (without the '\n' or a trailing '\r').
+   Returns its length, or -1 when the connection is closed / the line is too long. */
+static int read_line(conn_t *c, char *line, size_t cap) {
+  size_t len = 0;
+  for (;;) {
+    if (c->rpos >= c->rlen) {
+      ssize_t n;
+      do {
+        n = recv(c->fd, c->rbuf, sizeof c->rbuf, 0);
+      } while (n < 0 && errno == EINTR);
+      if (n <= 0) return -1;
+      c->rlen = (size_t)n;
+      c->rpos = 0;
+    }
+    char ch = c->rbuf[c->rpos++];
+    if (ch == '\n') break;
+    if (len + 1 >= cap) return -1;
+    line[len++] = ch;
+  }
+  if (len > 0 && line[len - 1] == '\r') len--;
+  line[len] = '\0';
+  return (int)len;
+}
+
+/* ---------------------------------------------------------------- file helpers */
+
+/* Creates every folder in path (like mkdir -p). If skip_last, the last component is a file. */
+static int make_dirs(const char *path, int skip_last) {
+  char tmp[LINE_MAX_LEN];
+  size_t len = strlen(path);
+
+  if (len == 0 || len >= sizeof tmp) return -1;
+  memcpy(tmp, path, len + 1);
+  if (skip_last) {
+    char *slash = strrchr(tmp, '/');
+    if (!slash || slash == tmp) return 0;
+    *slash = '\0';
+  }
+  for (char *p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+      *p = '\0';
+      if (mkdir(tmp, 0777) != 0 && errno != EEXIST) return -1;
+      *p = '/';
+    }
+  }
+  if (mkdir(tmp, 0777) != 0 && errno != EEXIST) return -1;
+  return 0;
+}
+
+static int valid_path(const char *p) {
+  return p && p[0] == '/' && strlen(p) < LINE_MAX_LEN - 1;
+}
+
+/* ---------------------------------------------------------------- commands */
+
+static void cmd_mkdir(conn_t *c, const char *path) {
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (make_dirs(path, 0) != 0) send_line(c, "ERR %s", strerror(errno));
+  else send_line(c, "OK");
+}
+
+static void cmd_size(conn_t *c, const char *path) {
+  struct stat st;
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) send_line(c, "OK -1");
+  else send_line(c, "OK %lld", (long long)st.st_size);
+}
+
+static void cmd_rm(conn_t *c, const char *path) {
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (unlink(path) != 0) send_line(c, "ERR %s", strerror(errno));
+  else send_line(c, "OK");
+}
+
+/* Returns -1 if the connection broke (caller must close it). */
+static int cmd_put(conn_t *c, char *args) {
+  char *end;
+  long long offset = strtoll(args, &end, 10);
+  if (*end != ' ') { send_line(c, "ERR bad PUT"); return 0; }
+  long long length = strtoll(end + 1, &end, 10);
+  if (*end != ' ' || offset < 0 || length < 0) { send_line(c, "ERR bad PUT"); return 0; }
+  const char *path = end + 1;
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return 0; }
+
+  if (make_dirs(path, 1) != 0) { send_line(c, "ERR mkdir: %s", strerror(errno)); return 0; }
+  int flags = O_WRONLY | O_CREAT | (offset == 0 ? O_TRUNC : 0);
+  int f = open(path, flags, 0777);
+  if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return 0; }
+  if (offset > 0 && lseek(f, (off_t)offset, SEEK_SET) < 0) {
+    send_line(c, "ERR seek: %s", strerror(errno));
+    close(f);
+    return 0;
+  }
+  if (send_line(c, "READY") != 0) { close(f); return -1; }
+
+  int write_err = 0;
+  long long left = length;
+  while (left > 0) {
+    size_t want = left > IO_BUF_SIZE ? IO_BUF_SIZE : (size_t)left;
+    ssize_t n = conn_read(c, c->io, want);
+    if (n <= 0) { close(f); return -1; } /* client went away mid-file */
+    if (!write_err && write_all(f, c->io, (size_t)n) != 0) write_err = errno ? errno : EIO;
+    left -= n;
+  }
+  if (close(f) != 0 && !write_err) write_err = errno ? errno : EIO;
+
+  if (write_err) send_line(c, "ERR %s", strerror(write_err));
+  else send_line(c, "OK");
+  return 0;
+}
+
+typedef struct unzip_ctx {
+  conn_t *c;
+  int fd;
+  uint64_t done;
+  uint64_t total;
+  time_t last_report;
+  int failed;
+} unzip_ctx_t;
+
+static size_t unzip_write(void *opaque, mz_uint64 ofs, const void *buf, size_t n) {
+  unzip_ctx_t *u = opaque;
+  (void)ofs; /* data arrives in order */
+  if (write_all(u->fd, buf, n) != 0) { u->failed = 1; return 0; }
+  u->done += n;
+  time_t now = time(NULL);
+  if (now != u->last_report) {
+    u->last_report = now;
+    send_line(u->c, "PROG %llu %llu", (unsigned long long)u->done, (unsigned long long)u->total);
+  }
+  return n;
+}
+
+/* An entry name is safe when it is relative and never goes up with "..". */
+static int safe_entry(const char *name) {
+  if (name[0] == '/' || name[0] == '\0') return 0;
+  const char *p = name;
+  while (*p) {
+    if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\\' || p[2] == '\0')) return 0;
+    const char *slash = strpbrk(p, "/\\");
+    if (!slash) break;
+    p = slash + 1;
+  }
+  return 1;
+}
+
+static void cmd_unzip(conn_t *c, char *args) {
+  char *tab = strchr(args, '\t');
+  if (!tab) { send_line(c, "ERR usage: UNZIP <zip><TAB><dest>"); return; }
+  *tab = '\0';
+  const char *zpath = args;
+  const char *dest = tab + 1;
+  if (!valid_path(zpath) || !valid_path(dest)) { send_line(c, "ERR bad path"); return; }
+
+  mz_zip_archive zip;
+  memset(&zip, 0, sizeof zip);
+  if (!mz_zip_reader_init_file_v2(&zip, zpath, MZ_ZIP_FLAG_DO_NOT_SORT_CENTRAL_DIRECTORY, 0, 0)) {
+    send_line(c, "ERR can't open zip: %s", mz_zip_get_error_string(mz_zip_get_last_error(&zip)));
+    return;
+  }
+
+  mz_uint count = mz_zip_reader_get_num_files(&zip);
+  unzip_ctx_t u = { .c = c, .fd = -1 };
+  for (mz_uint i = 0; i < count; i++) {
+    mz_zip_archive_file_stat st;
+    if (mz_zip_reader_file_stat(&zip, i, &st) && !st.m_is_directory) u.total += st.m_uncomp_size;
+  }
+  if (make_dirs(dest, 0) != 0) {
+    send_line(c, "ERR mkdir: %s", strerror(errno));
+    mz_zip_reader_end(&zip);
+    return;
+  }
+  send_line(c, "PROG 0 %llu", (unsigned long long)u.total);
+
+  char out[LINE_MAX_LEN];
+  mz_uint files = 0;
+  for (mz_uint i = 0; i < count; i++) {
+    mz_zip_archive_file_stat st;
+    if (!mz_zip_reader_file_stat(&zip, i, &st)) continue;
+    if (!safe_entry(st.m_filename)) continue; /* skip "../" tricks */
+    if (snprintf(out, sizeof out, "%s/%s", dest, st.m_filename) >= (int)sizeof out) continue;
+    for (char *p = out; *p; p++) if (*p == '\\') *p = '/';
+
+    if (st.m_is_directory) {
+      make_dirs(out, 0);
+      continue;
+    }
+    if (make_dirs(out, 1) != 0) {
+      send_line(c, "ERR mkdir %s: %s", st.m_filename, strerror(errno));
+      mz_zip_reader_end(&zip);
+      return;
+    }
+    u.fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+    if (u.fd < 0) {
+      send_line(c, "ERR %s: %s", st.m_filename, strerror(errno));
+      mz_zip_reader_end(&zip);
+      return;
+    }
+    mz_bool ok = mz_zip_reader_extract_to_callback(&zip, i, unzip_write, &u, 0);
+    close(u.fd);
+    u.fd = -1;
+    if (!ok || u.failed) {
+      send_line(c, "ERR %s: %s", st.m_filename,
+                u.failed ? "write failed" : mz_zip_get_error_string(mz_zip_get_last_error(&zip)));
+      mz_zip_reader_end(&zip);
+      return;
+    }
+    files++;
+  }
+  mz_zip_reader_end(&zip);
+  send_line(c, "PROG %llu %llu", (unsigned long long)u.total, (unsigned long long)u.total);
+  send_line(c, "OK %u", files);
+  notify("PlayBeam: extracted %u files", files);
+}
+
+/* ---------------------------------------------------------------- server */
+
+static volatile int g_running = 1;
+static int g_listen_fd = -1;
+
+static void *client_thread(void *arg) {
+  conn_t *c = arg;
+  char line[LINE_MAX_LEN];
+
+  while (g_running) {
+    if (read_line(c, line, sizeof line) < 0) break;
+
+    if (strcmp(line, "HELLO") == 0) {
+      send_line(c, "OK PlayBeam-Server " SERVER_VERSION);
+    } else if (strncmp(line, "PUT ", 4) == 0) {
+      if (cmd_put(c, line + 4) != 0) break;
+    } else if (strncmp(line, "MKDIR ", 6) == 0) {
+      cmd_mkdir(c, line + 6);
+    } else if (strncmp(line, "SIZE ", 5) == 0) {
+      cmd_size(c, line + 5);
+    } else if (strncmp(line, "UNZIP ", 6) == 0) {
+      cmd_unzip(c, line + 6);
+    } else if (strncmp(line, "RM ", 3) == 0) {
+      cmd_rm(c, line + 3);
+    } else if (strcmp(line, "QUIT") == 0) {
+      break;
+    } else if (strcmp(line, "SHUTDOWN") == 0) {
+      send_line(c, "OK");
+      g_running = 0;
+      shutdown(g_listen_fd, SHUT_RDWR);
+      close(g_listen_fd);
+      break;
+    } else {
+      send_line(c, "ERR unknown command");
+    }
+  }
+  close(c->fd);
+  free(c->io);
+  free(c);
+  return NULL;
+}
+
+int main(void) {
+  struct sockaddr_in addr;
+  int one = 1;
+
+  g_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (g_listen_fd < 0) {
+    notify("PlayBeam Server: socket failed (%s)", strerror(errno));
+    return 1;
+  }
+  setsockopt(g_listen_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+
+  memset(&addr, 0, sizeof addr);
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(SERVER_PORT);
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  if (bind(g_listen_fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
+    notify("PlayBeam Server is already running (port %d)", SERVER_PORT);
+    close(g_listen_fd);
+    return 0;
+  }
+  if (listen(g_listen_fd, 16) != 0) {
+    notify("PlayBeam Server: listen failed (%s)", strerror(errno));
+    close(g_listen_fd);
+    return 1;
+  }
+
+  notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
+
+  while (g_running) {
+    int fd = accept(g_listen_fd, NULL, NULL);
+    if (fd < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    int size = SOCK_BUF_SIZE;
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+    conn_t *c = calloc(1, sizeof *c);
+    if (c) c->io = malloc(IO_BUF_SIZE);
+    if (!c || !c->io) {
+      if (c) free(c);
+      close(fd);
+      continue;
+    }
+    c->fd = fd;
+
+    pthread_t th;
+    if (pthread_create(&th, NULL, client_thread, c) != 0) {
+      close(fd);
+      free(c->io);
+      free(c);
+      continue;
+    }
+    pthread_detach(th);
+  }
+
+  notify("PlayBeam Server stopped");
+  return 0;
+}
