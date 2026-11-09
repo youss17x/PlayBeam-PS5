@@ -4,10 +4,14 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -125,61 +129,83 @@ fun BrowserScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().systemBarsPadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize().background(Pearl.Bg).systemBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("← Back") }
-            Text("PS5 files", style = MaterialTheme.typography.titleLarge)
-        }
-        Text(path, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { path = parentPath(path) }, enabled = path != "/") { Text("⬆ Up") }
-            OutlinedButton(onClick = { dialog = BrowserDialog.NewFolder }) { Text("➕ Folder") }
-            Button(onClick = { onPick(path) }, modifier = Modifier.weight(1f)) { Text("✔ Use here") }
+            IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
+            Text("PS5 files", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { dialog = BrowserDialog.NewFolder }) { PIcon(R.drawable.ic_plus, Pearl.Ink) }
         }
 
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                onClick = { path = parentPath(path) },
+                enabled = path != "/",
+                shape = RoundedCornerShape(12.dp),
+                color = Pearl.Card,
+                border = BorderStroke(1.dp, Pearl.Line),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    PIcon(R.drawable.ic_upload, if (path != "/") Pearl.Ink else Pearl.Faint, 18.dp)
+                }
+            }
+            Text(path, style = MaterialTheme.typography.bodyMedium, color = Pearl.Muted, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
+
+        if (loading) PearlProgress(null)
+        error?.let { Text(it, color = Pearl.Error, style = MaterialTheme.typography.bodyMedium) }
 
         if (downloadJob != null) {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                        Text("Downloading $downloadName", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(formatBytes(downloadBytes), style = MaterialTheme.typography.bodySmall)
+            PearlCard {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Downloading $downloadName", style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(formatBytes(downloadBytes), style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { downloadJob?.cancel() }) { Text("Stop", color = Pearl.Error) }
                     }
-                    TextButton(onClick = { downloadJob?.cancel() }) { Text("Stop") }
+                    PearlProgress(null)
                 }
-                LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
         downloadMsg?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+
+        PearlCard(Modifier.weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                if (!loading && error == null && items.isEmpty()) {
+                    item {
+                        Text("Empty folder", style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(16.dp))
+                    }
+                }
+                itemsIndexed(items, key = { _, it -> it.name }) { idx, f ->
+                    FileRow(
+                        f,
+                        onOpen = { path = joinPath(path, f.name) },
+                        onRename = { dialog = BrowserDialog.Rename(f) },
+                        onDelete = { dialog = BrowserDialog.Delete(f) },
+                        onDownload = { requestDownload(f) },
+                        downloadEnabled = downloadJob == null,
+                    )
+                    if (idx < items.lastIndex) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 56.dp))
+                }
+            }
+        }
+
         downloadTree?.let { tree ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Phone download folder: ${treeName(tree)}", Modifier.weight(1f),
+                Text("Downloads go to: ${treeName(tree)}", Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { pickDownloadFolder.launch(null) }) { Text("Change") }
             }
         }
 
-        LazyColumn(Modifier.fillMaxSize()) {
-            if (!loading && error == null && items.isEmpty()) {
-                item { Text("Empty folder", style = MaterialTheme.typography.bodySmall) }
-            }
-            items(items, key = { it.name }) { f ->
-                FileRow(
-                    f,
-                    onOpen = { path = joinPath(path, f.name) },
-                    onRename = { dialog = BrowserDialog.Rename(f) },
-                    onDelete = { dialog = BrowserDialog.Delete(f) },
-                    onDownload = { requestDownload(f) },
-                    downloadEnabled = downloadJob == null,
-                )
-                HorizontalDivider()
-            }
-        }
+        PrimaryButton("Use this folder", R.drawable.ic_folder, { onPick(path) }, container = Pearl.Accent)
     }
 
     when (val d = dialog) {
@@ -194,6 +220,7 @@ fun BrowserScreen(
         }
         is BrowserDialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
+            containerColor = Pearl.Card,
             title = { Text("Delete ${d.file.name}?") },
             text = {
                 Text(
@@ -226,21 +253,34 @@ private fun FileRow(
         Modifier
             .fillMaxWidth()
             .clickable(enabled = f.isDir, onClick = onOpen)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .heightIn(min = 60.dp)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(if (f.isDir) "📁" else "📄", Modifier.padding(end = 12.dp))
+        Box(
+            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(if (f.isDir) Pearl.AccentSoft else Pearl.Bg),
+            contentAlignment = Alignment.Center
+        ) {
+            PIcon(if (f.isDir) R.drawable.ic_folder else R.drawable.ic_file,
+                if (f.isDir) Pearl.Accent else Pearl.Muted, 16.dp)
+        }
         Column(Modifier.weight(1f)) {
-            Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(f.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!f.isDir) Text(formatBytes(f.size), style = MaterialTheme.typography.bodySmall)
         }
         Box {
-            TextButton(onClick = { menu = true }) { Text("⋮") }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            IconButton(onClick = { menu = true }) { PIcon(R.drawable.ic_more, Pearl.Faint, 20.dp) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Pearl.Card) {
                 DropdownMenuItem(text = { Text("Download to phone") }, enabled = downloadEnabled,
+                    leadingIcon = { PIcon(R.drawable.ic_download, Pearl.Ink, 18.dp) },
                     onClick = { menu = false; onDownload() })
-                DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
+                DropdownMenuItem(text = { Text("Rename") },
+                    leadingIcon = { PIcon(R.drawable.ic_file, Pearl.Ink, 18.dp) },
+                    onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("Delete", color = Pearl.Error) },
+                    leadingIcon = { PIcon(R.drawable.ic_close, Pearl.Error, 18.dp) },
+                    onClick = { menu = false; onDelete() })
             }
         }
     }
@@ -259,7 +299,11 @@ private fun NameDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") }) },
+        containerColor = Pearl.Card,
+        text = {
+            OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") },
+                colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))
+        },
         confirmButton = { TextButton(onClick = { onConfirm(text.trim()) }, enabled = valid) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

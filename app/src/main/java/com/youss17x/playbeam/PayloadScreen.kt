@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -97,52 +99,68 @@ fun PayloadScreen(state: AppState) {
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Text("Send payload", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Sends an .elf or .bin payload to the PS5 loader — for example to start the FTP server before uploading.",
-            style = MaterialTheme.typography.bodySmall
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LogoMark()
+            Text("PlayBeam", style = MaterialTheme.typography.titleLarge)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ScreenTitle("Payload")
+            Text("Send an .elf or .bin payload to the PS5 loader — for example to start the FTP server before uploading.",
+                style = MaterialTheme.typography.bodySmall)
+        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "PS5: ${state.host.ifBlank { "not set" }}",
-                Modifier.weight(2f), style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Loader port") },
-                singleLine = true, modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        PearlCard {
+            SettingsRow("Console", state.host.trim().ifBlank { "Not set" })
+            SettingsRow("Loader port", divider = false, trailing = {
+                OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true,
+                    modifier = Modifier.width(96.dp), shape = RoundedCornerShape(12.dp),
+                    colors = pearlFieldColors(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            })
         }
         Text("The ELF loader usually listens on 9021; some .bin loaders use 9020.",
-            style = MaterialTheme.typography.bodySmall)
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
-        Button(onClick = { pick.launch(arrayOf("*/*")) }, enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
-            Text("🚀 Choose payload and send")
-        }
+        PrimaryButton("Choose payload and send", R.drawable.ic_bolt, { pick.launch(arrayOf("*/*")) },
+            enabled = sending == null)
 
         if (sending != null) {
-            Text("Sending $sending…")
-            LinearProgressIndicator(progress = { sendProgress }, modifier = Modifier.fillMaxWidth())
+            PearlCard {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Sending $sending…", style = MaterialTheme.typography.titleSmall)
+                    PearlProgress(sendProgress)
+                }
+            }
         }
         status?.let {
-            Text(it, color = if (statusOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            Text(it, style = MaterialTheme.typography.bodyMedium,
+                color = if (statusOk) Pearl.OkText else Pearl.Error)
         }
 
         if (recent.isNotEmpty()) {
-            HorizontalDivider()
-            Text("Recent payloads", style = MaterialTheme.typography.titleMedium)
-            recent.forEach { p ->
-                Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(p.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton(onClick = { send(p) }, enabled = sending == null) { Text("Send") }
-                        TextButton(onClick = {
+            SectionLabel("Recent")
+            PearlCard {
+                recent.forEachIndexed { idx, p ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        PIcon(R.drawable.ic_bolt, Pearl.Accent, 20.dp)
+                        Text(p.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { send(p) }, enabled = sending == null) {
+                            Text("Send", fontWeight = FontWeight.SemiBold)
+                        }
+                        IconButton(onClick = {
                             recent = recent.filter { it.uri != p.uri }
                             Store.savePayloads(ctx, recent)
-                        }) { Text("✕") }
+                        }) { PIcon(R.drawable.ic_close, Pearl.Faint, 18.dp) }
                     }
+                    if (idx < recent.lastIndex) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 16.dp))
                 }
             }
         }

@@ -2,7 +2,9 @@
 
 An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
 
-## Features (v0.4)
+## Features (v0.5)
+
+Clean, bright **Pearl** design: settings-style cards, one-tap console and destination sheets.
 
 **Upload**
 - Pick a whole folder (including all subfolders) or multiple files
@@ -39,7 +41,8 @@ To build locally, open the project in Android Studio and press **Run**.
 ## Code structure
 | File | Purpose |
 |---|---|
-| `MainActivity.kt` | App navigation, Upload screen, saved consoles, receiving shared files |
+| `MainActivity.kt` | App navigation, Upload screen, console and destination sheets, receiving shared files |
+| `Ui.kt` | Pearl theme (colors, type) and shared UI building blocks |
 | `BrowserScreen.kt` | PS5 file browser (incl. download to phone) |
 | `PayloadScreen.kt` | Payload sender |
 | `HistoryScreen.kt` | Upload history |
