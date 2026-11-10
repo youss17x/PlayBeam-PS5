@@ -237,7 +237,7 @@ object Links {
     const val X = "https://x.com/frank_casle"
     const val FACEBOOK = "https://www.facebook.com/share/1c4Xf3d7oG/"
     const val DISCORD = "https://discord.com/users/477911909719474206"
-    const val SOURCE = "https://github.com/youss17x/PlayBeam"
+    const val SOURCE = "https://github.com/youss17x/PlayBeam-PS5"
 
     val all = listOf("GitHub" to GITHUB, "X" to X, "Facebook" to FACEBOOK)
 }

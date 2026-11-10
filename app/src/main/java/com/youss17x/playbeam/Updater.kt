@@ -29,7 +29,7 @@ data class AppRelease(
  * A release must have a tag like "v1.2.0" and a .apk file attached.
  */
 object Updater {
-    private const val LATEST = "https://api.github.com/repos/youss17x/PlayBeam/releases/latest"
+    private const val LATEST = "https://api.github.com/repos/youss17x/PlayBeam-PS5/releases/latest"
 
     fun currentVersion(ctx: Context): String = runCatching {
         @Suppress("DEPRECATION")
