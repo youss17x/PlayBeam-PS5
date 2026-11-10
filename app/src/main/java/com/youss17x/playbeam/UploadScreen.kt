@@ -156,14 +156,15 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
                 onClick = { showConsole = true })
             SettingsRow(S.destination, state.remote.ifBlank { "/" }, onClick = { showDestination = true })
             SettingsRow(S.transfer, if (serverUp) "PlayBeam Server" else "FTP",
-                onClick = { goTo(Tab.Settings) },
+                onClick = { state.settingsPage = SettingsPage.SERVER; goTo(Tab.Settings) },
                 subtitle = if (serverUp) S.transferFastSub else S.transferFtpSub)
             val options = listOfNotNull(
                 if (state.resume) S.optResume else null,
                 S.optConn(state.connections),
                 if (state.extractZips) S.optUnzip else null,
             ).joinToString(" · ")
-            SettingsRow(S.options, options, onClick = { goTo(Tab.Settings) }, divider = false)
+            SettingsRow(S.options, options, onClick = { state.settingsPage = SettingsPage.TRANSFERS; goTo(Tab.Settings) },
+                divider = false)
         }
 
         PrimaryButton(

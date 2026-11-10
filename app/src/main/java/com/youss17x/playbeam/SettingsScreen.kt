@@ -22,13 +22,14 @@ import kotlinx.coroutines.launch
 
 
 /** The pages inside Settings. The main screen lists them; each opens on its own. */
-private enum class SettingsPage { LANGUAGE, APPEARANCE, PS5, SERVER, INFO, TRANSFERS, DOWNLOADS, UPDATES, ABOUT }
+enum class SettingsPage { LANGUAGE, APPEARANCE, PS5, SERVER, INFO, TRANSFERS, DOWNLOADS, UPDATES, ABOUT }
 
 @Composable
 fun SettingsScreen(state: AppState) {
     val ctx = LocalContext.current
     val prefs = remember { Store.prefs(ctx) }
-    var page by remember { mutableStateOf<SettingsPage?>(null) }
+    // kept in AppState so other tabs can open a page directly (e.g. Upload → Options)
+    var page by state::settingsPage
     var downloadTree by remember { mutableStateOf(prefs.getString("downloadTree", null)?.let(Uri::parse)) }
     val version = remember { Updater.currentVersion(ctx) }
 

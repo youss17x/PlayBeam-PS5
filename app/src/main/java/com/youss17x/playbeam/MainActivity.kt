@@ -94,6 +94,9 @@ class AppState(private val ctx: Context) {
     var selected by mutableStateOf<List<Uri>>(emptyList())
     var isTree by mutableStateOf(true)
 
+    /** Page open inside Settings (null = the main list). */
+    var settingsPage by mutableStateOf<SettingsPage?>(null)
+
     /** Folder the Files tab shows (kept while switching tabs). */
     var filesPath by mutableStateOf(remote.ifBlank { "/" })
 
@@ -169,7 +172,11 @@ fun App(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
                         val on = tab == t
                         NavigationBarItem(
                             selected = on,
-                            onClick = { tab = t },
+                            onClick = {
+                                // the Settings tab button always shows the main Settings list
+                                if (t == Tab.Settings) state.settingsPage = null
+                                tab = t
+                            },
                             icon = { PIcon(t.icon, if (on) Pearl.Accent else Pearl.Muted) },
                             label = {
                                 Text(t.label, fontSize = 11.sp, maxLines = 1,
@@ -209,7 +216,10 @@ private fun FilesTab(state: AppState, goTo: (Tab) -> Unit) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(S.noPs5Title, style = MaterialTheme.typography.titleMedium)
                     Text(S.noPs5Body, style = MaterialTheme.typography.bodySmall)
-                    PrimaryButton(S.openSettings, R.drawable.ic_settings, { goTo(Tab.Settings) })
+                    PrimaryButton(S.openSettings, R.drawable.ic_settings, {
+                        state.settingsPage = SettingsPage.PS5
+                        goTo(Tab.Settings)
+                    })
                 }
             }
         }
