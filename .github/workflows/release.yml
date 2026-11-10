@@ -71,7 +71,7 @@ jobs:
           VERSION="${{ inputs.version }}"
           VERSION="${VERSION#v}"
           gradle assembleRelease --no-daemon -PversionName="$VERSION" -PversionCode="${{ github.run_number }}0"
-          cp app/build/outputs/apk/release/*.apk "PlayBeam-$VERSION.apk"
+          cp app/build/outputs/apk/release/*.apk "PlayBeam-PS5-$VERSION.apk"
           cp payload/playbeam-server.elf "playbeam-server-$VERSION.elf"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -79,8 +79,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
-          name: PlayBeam ${{ env.VERSION }}
+          name: PlayBeam PS5 ${{ env.VERSION }}
           body: ${{ inputs.notes }}
           files: |
-            PlayBeam-${{ env.VERSION }}.apk
+            PlayBeam-PS5-${{ env.VERSION }}.apk
             playbeam-server-${{ env.VERSION }}.elf

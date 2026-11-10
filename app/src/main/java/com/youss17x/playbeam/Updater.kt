@@ -99,7 +99,7 @@ object Updater {
     suspend fun download(ctx: Context, r: AppRelease, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
         val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() } // old downloads
-        val out = File(dir, "PlayBeam-${r.version}.apk")
+        val out = File(dir, "PlayBeam-PS5-${r.version}.apk")
         val conn = (URL(r.apkUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 30_000

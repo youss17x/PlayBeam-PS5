@@ -58,14 +58,16 @@ jobs:
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/*.apk PlayBeam-PS5-test.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PlayBeam-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: PlayBeam-PS5-test
+          path: PlayBeam-PS5-test.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: playbeam-server-elf
+          name: PlayBeam-Server-PS5-payload
           path: payload/playbeam-server.elf
