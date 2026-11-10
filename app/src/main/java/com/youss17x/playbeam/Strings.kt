@@ -251,6 +251,7 @@ abstract class Strings {
     abstract val themeLight: String
     abstract val themeDark: String
     abstract val checkUpdates: String
+    abstract val updates: String
     abstract val autoCheck: String
     abstract val autoCheckSub: String
     abstract val checking: String
@@ -489,6 +490,7 @@ object En : Strings() {
     override val themeSystem = "System"
     override val themeLight = "Light"
     override val themeDark = "Dark"
+    override val updates = "Updates"
     override val checkUpdates = "Check for updates"
     override val autoCheck = "Check automatically"
     override val autoCheckSub = "Look for a new version when the app opens"
@@ -726,6 +728,7 @@ object Fr : Strings() {
     override val themeSystem = "Système"
     override val themeLight = "Clair"
     override val themeDark = "Sombre"
+    override val updates = "Mises à jour"
     override val checkUpdates = "Rechercher des mises à jour"
     override val autoCheck = "Vérifier automatiquement"
     override val autoCheckSub = "Chercher une nouvelle version à l'ouverture de l'app"
@@ -968,6 +971,7 @@ object Ar : Strings() {
     override val themeSystem = "حسب النظام"
     override val themeLight = "فاتح"
     override val themeDark = "داكن"
+    override val updates = "التحديثات"
     override val checkUpdates = "البحث عن تحديث"
     override val autoCheck = "البحث تلقائياً"
     override val autoCheckSub = "يبحث عن إصدار جديد عند فتح التطبيق"

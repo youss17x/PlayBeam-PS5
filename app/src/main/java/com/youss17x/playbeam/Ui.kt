@@ -26,6 +26,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** App name shown on the home screen and inside the app. */
+const val APP_NAME = "PlayBeam PS5"
+
 /** Colors of one theme. */
 class Palette(
     val Bg: Color, val Card: Color, val Ink: Color, val Muted: Color, val Faint: Color,
@@ -237,6 +240,7 @@ fun SettingsRow(
     onClick: (() -> Unit)? = null,
     subtitle: String? = null,
     divider: Boolean = true,
+    @DrawableRes icon: Int? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Column {
@@ -249,6 +253,12 @@ fun SettingsRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (icon != null) {
+                Box(
+                    Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(Pearl.AccentSoft),
+                    contentAlignment = Alignment.Center
+                ) { PIcon(icon, Pearl.Accent, 18.dp) }
+            }
             Column(Modifier.weight(1f).padding(vertical = if (subtitle != null) 10.dp else 0.dp)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge, color = Pearl.Ink)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall)
@@ -260,7 +270,8 @@ fun SettingsRow(
             if (trailing != null) trailing()
             else if (onClick != null) PIcon(R.drawable.ic_chevron_right, Pearl.Faint, 16.dp)
         }
-        if (divider) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 16.dp))
+        if (divider) HorizontalDivider(color = Pearl.Divider,
+            modifier = Modifier.padding(start = if (icon != null) 58.dp else 16.dp))
     }
 }
 

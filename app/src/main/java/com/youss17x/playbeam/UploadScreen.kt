@@ -104,7 +104,7 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
         // ---- header ----
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             LogoMark()
-            Text("PlayBeam", style = MaterialTheme.typography.titleLarge, color = Pearl.Ink)
+            Text(APP_NAME, style = MaterialTheme.typography.titleLarge, color = Pearl.Ink)
             Spacer(Modifier.weight(1f))
             when {
                 progress.running -> Chip(S.chipSending, Pearl.Accent, Pearl.AccentSoft, Pearl.Accent)

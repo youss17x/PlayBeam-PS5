@@ -2,6 +2,7 @@ package com.youss17x.playbeam
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -20,17 +21,16 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 
+/** The pages inside Settings. The main screen lists them; each opens on its own. */
+private enum class SettingsPage { LANGUAGE, APPEARANCE, PS5, SERVER, INFO, TRANSFERS, DOWNLOADS, UPDATES, ABOUT }
+
 @Composable
 fun SettingsScreen(state: AppState) {
     val ctx = LocalContext.current
     val prefs = remember { Store.prefs(ctx) }
+    var page by remember { mutableStateOf<SettingsPage?>(null) }
     var downloadTree by remember { mutableStateOf(prefs.getString("downloadTree", null)?.let(Uri::parse)) }
-    val version = remember {
-        runCatching {
-            @Suppress("DEPRECATION")
-            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
-        }.getOrNull() ?: "?"
-    }
+    val version = remember { Updater.currentVersion(ctx) }
 
     val scope = rememberCoroutineScope()
     var autoUpdate by remember { mutableStateOf(prefs.getBoolean("autoUpdate", true)) }
@@ -51,102 +51,147 @@ fun SettingsScreen(state: AppState) {
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        ScreenTitle(S.settings)
-
-        // ---- appearance ----
-        SectionLabel(S.secAppearance)
-        PearlCard {
-            val modes = listOf(ThemeMode.SYSTEM to S.themeSystem, ThemeMode.LIGHT to S.themeLight, ThemeMode.DARK to S.themeDark)
-            modes.forEachIndexed { idx, (m, label) ->
-                SettingsRow(label, divider = idx < modes.lastIndex,
-                    onClick = { Pearl.set(ctx, m) },
-                    trailing = {
-                        if (Pearl.mode == m) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
-                    })
+    fun checkNow() {
+        if (checking) return
+        scope.launch {
+            checking = true
+            updateStatus = S.checking
+            updateStatus = try {
+                val r = Updater.available(ctx, ignoreSkipped = true)
+                if (r != null) { found = r; null } else S.upToDate
+            } catch (e: Exception) {
+                S.updateCheckFailed
             }
-        }
-
-        Spacer(Modifier.height(4.dp))
-        // ---- language ----
-        SectionLabel(S.secLanguage)
-        PearlCard {
-            Lang.entries.forEachIndexed { idx, l ->
-                SettingsRow(l.nativeName, divider = idx < Lang.entries.lastIndex,
-                    onClick = { I18n.set(ctx, l) },
-                    trailing = {
-                        if (I18n.lang == l) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
-                    })
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        // ---- PS5 ----
-        SectionLabel(S.secPs5)
-        ConsoleEditor(state)
-
-        // ---- PlayBeam Server ----
-        Spacer(Modifier.height(4.dp))
-        SectionLabel(S.secServer)
-        ServerCard(state)
-
-        // ---- PS5 info (model, sensors, drives) ----
-        Spacer(Modifier.height(4.dp))
-        SectionLabel(S.ps5Info)
-        Ps5InfoCard(state)
-
-        // ---- transfers ----
-        Spacer(Modifier.height(4.dp))
-        SectionLabel(S.secTransfers)
-        PearlCard {
-            SettingsRow(S.resumeTitle,
-                subtitle = S.resumeSub,
-                trailing = { PearlSwitch(state.resume) { state.resume = it; state.save() } })
-            SettingsRow(S.extractTitle,
-                subtitle = S.extractSub,
-                trailing = { PearlSwitch(state.extractZips) { state.extractZips = it; state.save() } })
-            SettingsRow(S.connections, subtitle = S.connectionsSub, divider = false,
-                trailing = { NumberPicker((1..4).toList(), state.connections) { state.connections = it; state.save() } })
-        }
-
-        // ---- downloads ----
-        Spacer(Modifier.height(4.dp))
-        SectionLabel(S.secDownloads)
-        PearlCard {
-            SettingsRow(S.downloadFolder, downloadTree?.let { treeName(it) } ?: S.notChosen,
-                subtitle = S.downloadFolderSub,
-                onClick = { pickDownloadFolder.launch(null) }, divider = false)
-        }
-
-        // ---- about ----
-        Spacer(Modifier.height(4.dp))
-        SectionLabel(S.secAbout)
-        AboutCard(version)
-        PearlCard {
-            SettingsRow(S.checkUpdates, updateStatus, onClick = {
-                if (checking) return@SettingsRow
-                scope.launch {
-                    checking = true
-                    updateStatus = S.checking
-                    updateStatus = try {
-                        val r = Updater.available(ctx, ignoreSkipped = true)
-                        if (r != null) { found = r; null } else S.upToDate
-                    } catch (e: Exception) {
-                        S.updateCheckFailed
-                    }
-                    checking = false
-                }
-            })
-            SettingsRow(S.autoCheck, subtitle = S.autoCheckSub, trailing = {
-                PearlSwitch(autoUpdate) { autoUpdate = it; prefs.edit().putBoolean("autoUpdate", it).apply() }
-            })
-            SettingsRow(S.serverPort, "$SERVER_PORT", divider = false)
+            checking = false
         }
     }
+
+    // ---------------- main list ----------------
+    val current = page
+    if (current == null) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            ScreenTitle(S.settings)
+            val themeName = when (Pearl.mode) {
+                ThemeMode.SYSTEM -> S.themeSystem
+                ThemeMode.LIGHT -> S.themeLight
+                ThemeMode.DARK -> S.themeDark
+            }
+            PearlCard {
+                SettingsRow(S.secLanguage, I18n.lang.nativeName, icon = R.drawable.ic_globe,
+                    onClick = { page = SettingsPage.LANGUAGE })
+                SettingsRow(S.secAppearance, themeName, icon = R.drawable.ic_theme, divider = false,
+                    onClick = { page = SettingsPage.APPEARANCE })
+            }
+            PearlCard {
+                SettingsRow(S.secPs5, state.currentConsole?.name ?: state.host.trim().ifBlank { S.notSet },
+                    icon = R.drawable.ic_console, onClick = { page = SettingsPage.PS5 })
+                SettingsRow(S.secServer, icon = R.drawable.ic_bolt, onClick = { page = SettingsPage.SERVER })
+                SettingsRow(S.ps5Info, icon = R.drawable.ic_info, divider = false,
+                    onClick = { page = SettingsPage.INFO })
+            }
+            PearlCard {
+                SettingsRow(S.secTransfers, S.optConn(state.connections), icon = R.drawable.ic_upload,
+                    onClick = { page = SettingsPage.TRANSFERS })
+                SettingsRow(S.secDownloads, downloadTree?.let { treeName(it) } ?: S.notChosen,
+                    icon = R.drawable.ic_download, divider = false, onClick = { page = SettingsPage.DOWNLOADS })
+            }
+            PearlCard {
+                SettingsRow(S.updates, "v$version", icon = R.drawable.ic_refresh,
+                    onClick = { page = SettingsPage.UPDATES })
+                SettingsRow(S.secAbout, icon = R.drawable.ic_stat_playbeam, divider = false,
+                    onClick = { page = SettingsPage.ABOUT })
+            }
+        }
+        return
+    }
+
+    // ---------------- one page ----------------
+    BackHandler { page = null }
+    val title = when (current) {
+        SettingsPage.LANGUAGE -> S.secLanguage
+        SettingsPage.APPEARANCE -> S.secAppearance
+        SettingsPage.PS5 -> S.secPs5
+        SettingsPage.SERVER -> S.secServer
+        SettingsPage.INFO -> S.ps5Info
+        SettingsPage.TRANSFERS -> S.secTransfers
+        SettingsPage.DOWNLOADS -> S.secDownloads
+        SettingsPage.UPDATES -> S.updates
+        SettingsPage.ABOUT -> S.secAbout
+    }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { page = null }) { PIcon(R.drawable.ic_back, Pearl.Ink) }
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+        }
+
+        when (current) {
+            SettingsPage.LANGUAGE -> PearlCard {
+                Lang.entries.forEachIndexed { idx, l ->
+                    SettingsRow(l.nativeName, divider = idx < Lang.entries.lastIndex,
+                        onClick = { I18n.set(ctx, l) },
+                        trailing = { SelectedDot(I18n.lang == l) })
+                }
+            }
+
+            SettingsPage.APPEARANCE -> PearlCard {
+                val modes = listOf(ThemeMode.SYSTEM to S.themeSystem, ThemeMode.LIGHT to S.themeLight, ThemeMode.DARK to S.themeDark)
+                modes.forEachIndexed { idx, (m, label) ->
+                    SettingsRow(label, divider = idx < modes.lastIndex,
+                        onClick = { Pearl.set(ctx, m) },
+                        trailing = { SelectedDot(Pearl.mode == m) })
+                }
+            }
+
+            SettingsPage.PS5 -> ConsoleEditor(state)
+
+            SettingsPage.SERVER -> ServerCard(state)
+
+            SettingsPage.INFO -> Ps5InfoCard(state)
+
+            SettingsPage.TRANSFERS -> PearlCard {
+                SettingsRow(S.resumeTitle,
+                    subtitle = S.resumeSub,
+                    trailing = { PearlSwitch(state.resume) { state.resume = it; state.save() } })
+                SettingsRow(S.extractTitle,
+                    subtitle = S.extractSub,
+                    trailing = { PearlSwitch(state.extractZips) { state.extractZips = it; state.save() } })
+                SettingsRow(S.connections, subtitle = S.connectionsSub, divider = false,
+                    trailing = { NumberPicker((1..4).toList(), state.connections) { state.connections = it; state.save() } })
+            }
+
+            SettingsPage.DOWNLOADS -> PearlCard {
+                SettingsRow(S.downloadFolder, downloadTree?.let { treeName(it) } ?: S.notChosen,
+                    subtitle = S.downloadFolderSub,
+                    onClick = { pickDownloadFolder.launch(null) }, divider = false)
+            }
+
+            SettingsPage.UPDATES -> PearlCard {
+                SettingsRow(S.version, "v$version")
+                SettingsRow(S.checkUpdates, updateStatus, onClick = ::checkNow)
+                SettingsRow(S.autoCheck, subtitle = S.autoCheckSub, divider = false, trailing = {
+                    PearlSwitch(autoUpdate) { autoUpdate = it; prefs.edit().putBoolean("autoUpdate", it).apply() }
+                })
+            }
+
+            SettingsPage.ABOUT -> {
+                AboutCard(version)
+                PearlCard {
+                    SettingsRow(S.serverPort, "$SERVER_PORT", divider = false)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectedDot(on: Boolean) {
+    if (on) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
 }
 
 /** App identity and the author's links, like an "About" page. */
@@ -163,7 +208,7 @@ private fun AboutCard(version: String) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             LogoMark(72.dp)
-            Text("PlayBeam", style = MaterialTheme.typography.headlineSmall)
+            Text(APP_NAME, style = MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip("v$version", Pearl.Ink, Pearl.Track)
                 Chip(S.openSource, Pearl.OkText, Pearl.OkSoft)

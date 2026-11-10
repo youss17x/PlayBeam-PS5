@@ -121,7 +121,7 @@ fun PayloadScreen(state: AppState) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             LogoMark()
-            Text("PlayBeam", style = MaterialTheme.typography.titleLarge)
+            Text(APP_NAME, style = MaterialTheme.typography.titleLarge)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ScreenTitle(S.tabPayload)

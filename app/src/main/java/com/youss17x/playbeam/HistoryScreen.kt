@@ -34,7 +34,7 @@ fun HistoryScreen() {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 LogoMark()
-                Text("PlayBeam", style = MaterialTheme.typography.titleLarge)
+                Text(APP_NAME, style = MaterialTheme.typography.titleLarge)
             }
         }
         item {
