@@ -2,9 +2,6 @@ package com.youss17x.playbeam
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -157,7 +154,6 @@ fun SettingsScreen(state: AppState) {
 @Composable
 private fun AboutCard(version: String) {
     val ctx = LocalContext.current
-    val clipboard = LocalClipboardManager.current
     fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
     PearlCard {
@@ -181,11 +177,7 @@ private fun AboutCard(version: String) {
                 Links.all.filter { it.second.isNotBlank() }.forEach { (label, url) ->
                     SecondaryButton(label, R.drawable.ic_link, { open(url) })
                 }
-                // Discord has no public profile link by username: copy it instead
-                SecondaryButton("Discord", R.drawable.ic_copy, {
-                    clipboard.setText(AnnotatedString(Links.DISCORD_USER))
-                    Toast.makeText(ctx, S.discordCopied(Links.DISCORD_USER), Toast.LENGTH_SHORT).show()
-                })
+                SecondaryButton("Discord", R.drawable.ic_link, { open(Links.DISCORD) })
             }
             Text(S.madeBy, style = MaterialTheme.typography.bodySmall)
         }
@@ -197,7 +189,7 @@ object Links {
     const val GITHUB = "https://github.com/youss17x"
     const val X = "https://x.com/frank_casle"
     const val FACEBOOK = "https://www.facebook.com/share/1c4Xf3d7oG/"
-    const val DISCORD_USER = "youssriaal"
+    const val DISCORD = "https://discord.com/users/477911909719474206"
 
     val all = listOf("GitHub" to GITHUB, "X" to X, "Facebook" to FACEBOOK)
 }
