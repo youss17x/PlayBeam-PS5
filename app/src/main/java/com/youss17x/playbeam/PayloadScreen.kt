@@ -94,7 +94,7 @@ fun PayloadScreen(state: AppState) {
 
     fun startServer() {
         val host = state.host.trim()
-        if (host.isBlank()) { serverMsg = "Set your PS5 first (Upload → Console)."; return }
+        if (host.isBlank()) { serverMsg = "Set your PS5 first in Settings."; return }
         scope.launch {
             serverBusy = "Sending PlayBeam Server…"; serverMsg = null
             try {
@@ -128,7 +128,7 @@ fun PayloadScreen(state: AppState) {
     fun send(p: RecentPayload) {
         val host = state.host.trim()
         if (host.isBlank()) {
-            statusOk = false; status = "Set the PS5 IP on the Upload tab first (or use Find my PS5)."
+            statusOk = false; status = "Set your PS5 first in Settings (or use Find my PS5)."
             return
         }
         prefs.edit().putString("payloadPort", port).apply()

@@ -2,6 +2,7 @@ package com.youss17x.playbeam
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -36,7 +37,9 @@ fun BrowserScreen(
     port: Int,
     startPath: String,
     onPick: (String) -> Unit,
-    onClose: () -> Unit,
+    onClose: (() -> Unit)?,
+    onPathChange: (String) -> Unit = {},
+    pickLabel: String = "Use this folder",
 ) {
     // PlayBeam Server when it is running on the PS5, otherwise FTP
     var session by remember { mutableStateOf<RemoteFs?>(null) }
@@ -108,7 +111,11 @@ fun BrowserScreen(
         else { pendingDownload = f; pickDownloadFolder.launch(null) }
     }
 
+    // system Back goes up one folder
+    BackHandler(enabled = path != "/") { path = parentPath(path) }
+
     LaunchedEffect(path, reloadKey, current) {
+        onPathChange(path)
         val session = current ?: run { loading = true; return@LaunchedEffect }
         loading = true
         error = null
@@ -135,13 +142,16 @@ fun BrowserScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(Pearl.Bg).systemBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().background(Pearl.Bg)
+            .then(if (onClose != null) Modifier.systemBarsPadding() else Modifier)
+            .padding(horizontal = 20.dp, vertical = if (onClose != null) 12.dp else 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
+            if (onClose != null) IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
             Column(Modifier.weight(1f)) {
-                Text("PS5 files", style = MaterialTheme.typography.titleLarge)
+                if (onClose != null) Text("PS5 files", style = MaterialTheme.typography.titleLarge)
+                else ScreenTitle("Files")
                 current?.let { Text("via ${it.via}", style = MaterialTheme.typography.bodySmall) }
             }
             IconButton(onClick = { dialog = BrowserDialog.NewFolder }) { PIcon(R.drawable.ic_plus, Pearl.Ink) }
@@ -214,7 +224,7 @@ fun BrowserScreen(
             }
         }
 
-        PrimaryButton("Use this folder", R.drawable.ic_folder, { onPick(path) }, container = Pearl.Accent)
+        PrimaryButton(pickLabel, R.drawable.ic_upload, { onPick(path) }, container = Pearl.Accent)
     }
 
     when (val d = dialog) {
