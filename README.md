@@ -90,3 +90,11 @@ To build locally, open the project in Android Studio and press **Run**.
 - [x] Parallel uploads, upload queue, history
 - [x] Payload sender
 - [x] PlayBeam Server payload: faster transfers and ZIP extraction on the PS5
+
+## License
+PlayBeam PS5 is free software, released under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
+You can use, study, share and modify it; versions you distribute must stay under GPL-3.0 and keep the credits.
+
+Copyright © 2026 youss17x (Youss Riaal).
+The PS5 payload uses the [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) (GPL-3.0) and
+[miniz](https://github.com/richgel999/miniz) (MIT, see `payload/miniz-LICENSE`).

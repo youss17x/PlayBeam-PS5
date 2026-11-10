@@ -211,7 +211,7 @@ private fun AboutCard(version: String) {
             Text(APP_NAME, style = MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Chip("v$version", Pearl.Ink, Pearl.Track)
-                Chip(S.openSource, Pearl.OkText, Pearl.OkSoft)
+                Chip("GPL-3.0", Pearl.OkText, Pearl.OkSoft)
             }
             Text(S.appTagline, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
             FlowRow(
