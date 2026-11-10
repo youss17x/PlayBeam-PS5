@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 private const val REPO_URL = "https://github.com/youss17x/PlayBeam"
 
@@ -29,6 +30,13 @@ fun SettingsScreen(state: AppState) {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
         }.getOrNull() ?: "?"
     }
+
+    val scope = rememberCoroutineScope()
+    var autoUpdate by remember { mutableStateOf(prefs.getBoolean("autoUpdate", true)) }
+    var checking by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    var found by remember { mutableStateOf<AppRelease?>(null) }
+    found?.let { UpdateDialog(it, onDismiss = { found = null }) }
 
     val pickDownloadFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -48,6 +56,20 @@ fun SettingsScreen(state: AppState) {
     ) {
         ScreenTitle(S.settings)
 
+        // ---- appearance ----
+        SectionLabel(S.secAppearance)
+        PearlCard {
+            val modes = listOf(ThemeMode.SYSTEM to S.themeSystem, ThemeMode.LIGHT to S.themeLight, ThemeMode.DARK to S.themeDark)
+            modes.forEachIndexed { idx, (m, label) ->
+                SettingsRow(label, divider = idx < modes.lastIndex,
+                    onClick = { Pearl.set(ctx, m) },
+                    trailing = {
+                        if (Pearl.mode == m) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
+                    })
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
         // ---- language ----
         SectionLabel(S.secLanguage)
         PearlCard {
@@ -99,6 +121,23 @@ fun SettingsScreen(state: AppState) {
         SectionLabel(S.secAbout)
         PearlCard {
             SettingsRow(S.version, version)
+            SettingsRow(S.checkUpdates, updateStatus, onClick = {
+                if (checking) return@SettingsRow
+                scope.launch {
+                    checking = true
+                    updateStatus = S.checking
+                    updateStatus = try {
+                        val r = Updater.available(ctx, ignoreSkipped = true)
+                        if (r != null) { found = r; null } else S.upToDate
+                    } catch (e: Exception) {
+                        S.updateCheckFailed
+                    }
+                    checking = false
+                }
+            })
+            SettingsRow(S.autoCheck, subtitle = S.autoCheckSub, trailing = {
+                PearlSwitch(autoUpdate) { autoUpdate = it; prefs.edit().putBoolean("autoUpdate", it).apply() }
+            })
             SettingsRow(S.serverPort, "$SERVER_PORT")
             SettingsRow(S.sourceCode, "GitHub", divider = false, onClick = {
                 runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }

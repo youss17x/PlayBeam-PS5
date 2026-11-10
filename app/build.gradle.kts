@@ -12,13 +12,33 @@ android {
         applicationId = "com.youss17x.playbeam"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.0"
+        // a release build can pass -PversionName=1.2.0 -PversionCode=12
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 9
+        versionName = (project.findProperty("versionName") as String?) ?: "0.9.0"
+    }
+
+    // One fixed key for every build, so new versions install over old ones.
+    // In GitHub Actions it comes from the repository secrets (see .github/workflows).
+    val keystorePath = System.getenv("SIGNING_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("playbeam") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_STORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
+        val key = if (keystorePath != null) signingConfigs.getByName("playbeam") else null
+        debug {
+            if (key != null) signingConfig = key
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = key ?: signingConfigs.getByName("debug")
         }
     }
 

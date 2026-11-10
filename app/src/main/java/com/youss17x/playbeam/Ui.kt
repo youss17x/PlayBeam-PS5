@@ -8,7 +8,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,51 +26,121 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** "Pearl" design: bright, calm, iOS-settings-like. */
-object Pearl {
-    val Bg = Color(0xFFF3F4F7)
-    val Card = Color(0xFFFFFFFF)
-    val Ink = Color(0xFF0E1424)
-    val Muted = Color(0xFF5B6475)
-    val Faint = Color(0xFF8A92A3)
-    val Line = Color(0xFFE3E6EC)
-    val Divider = Color(0xFFEEF0F4)
-    val Track = Color(0xFFE6E8EE)
-    val Accent = Color(0xFF2F5BEA)
-    val AccentSoft = Color(0xFFEAF0FF)
-    val Ok = Color(0xFF23A55A)
-    val OkSoft = Color(0xFFE3F5EA)
-    val OkText = Color(0xFF1C6B3F)
-    val Error = Color(0xFFC62828)
-    val ErrorSoft = Color(0xFFFDECEC)
-}
-
-private val PearlColors = lightColorScheme(
-    primary = Pearl.Accent,
-    onPrimary = Color.White,
-    primaryContainer = Pearl.AccentSoft,
-    onPrimaryContainer = Pearl.Accent,
-    secondary = Pearl.Ink,
-    onSecondary = Color.White,
-    secondaryContainer = Pearl.AccentSoft,
-    onSecondaryContainer = Pearl.Accent,
-    background = Pearl.Bg,
-    onBackground = Pearl.Ink,
-    surface = Pearl.Card,
-    onSurface = Pearl.Ink,
-    surfaceVariant = Pearl.Track,
-    onSurfaceVariant = Pearl.Muted,
-    surfaceContainerLowest = Pearl.Card,
-    surfaceContainerLow = Pearl.Card,
-    surfaceContainer = Pearl.Card,
-    surfaceContainerHigh = Pearl.Card,
-    surfaceContainerHighest = Pearl.Track,
-    outline = Pearl.Line,
-    outlineVariant = Pearl.Divider,
-    error = Pearl.Error,
+/** Colors of one theme. */
+class Palette(
+    val Bg: Color, val Card: Color, val Ink: Color, val Muted: Color, val Faint: Color,
+    val Line: Color, val Divider: Color, val Track: Color,
+    val Accent: Color, val AccentSoft: Color,
+    val Ok: Color, val OkSoft: Color, val OkText: Color,
+    val Error: Color, val ErrorSoft: Color,
+    /** Main (dark-in-light-mode) button and its text. */
+    val Primary: Color, val OnPrimary: Color,
+    val LogoBg: Color,
 )
 
-private val PearlType = Typography(
+private val LightPalette = Palette(
+    Bg = Color(0xFFF3F4F7), Card = Color(0xFFFFFFFF), Ink = Color(0xFF0E1424),
+    Muted = Color(0xFF5B6475), Faint = Color(0xFF8A92A3),
+    Line = Color(0xFFE3E6EC), Divider = Color(0xFFEEF0F4), Track = Color(0xFFE6E8EE),
+    Accent = Color(0xFF2F5BEA), AccentSoft = Color(0xFFEAF0FF),
+    Ok = Color(0xFF23A55A), OkSoft = Color(0xFFE3F5EA), OkText = Color(0xFF1C6B3F),
+    Error = Color(0xFFC62828), ErrorSoft = Color(0xFFFDECEC),
+    Primary = Color(0xFF0E1424), OnPrimary = Color.White,
+    LogoBg = Color(0xFF0E1424),
+)
+
+private val DarkPalette = Palette(
+    Bg = Color(0xFF0D1015), Card = Color(0xFF161A21), Ink = Color(0xFFE9EDF3),
+    Muted = Color(0xFFA0A9B8), Faint = Color(0xFF6F7888),
+    Line = Color(0xFF252B35), Divider = Color(0xFF1F242D), Track = Color(0xFF242A34),
+    Accent = Color(0xFF7193FF), AccentSoft = Color(0xFF1C2747),
+    Ok = Color(0xFF3CCB7F), OkSoft = Color(0xFF13291D), OkText = Color(0xFF86E3B0),
+    Error = Color(0xFFFF6B6B), ErrorSoft = Color(0xFF331A1C),
+    Primary = Color(0xFFE9EDF3), OnPrimary = Color(0xFF0D1015),
+    LogoBg = Color(0xFF232A36),
+)
+
+enum class ThemeMode(val code: String) { SYSTEM("system"), LIGHT("light"), DARK("dark") }
+
+/** "Pearl" design: calm, iOS-settings-like, in light and dark. Screens redraw when the theme changes. */
+object Pearl {
+    var mode by mutableStateOf(ThemeMode.SYSTEM)
+        private set
+    var isDark by mutableStateOf(false)
+        private set
+
+    private val p: Palette get() = if (isDark) DarkPalette else LightPalette
+
+    val Bg get() = p.Bg
+    val Card get() = p.Card
+    val Ink get() = p.Ink
+    val Muted get() = p.Muted
+    val Faint get() = p.Faint
+    val Line get() = p.Line
+    val Divider get() = p.Divider
+    val Track get() = p.Track
+    val Accent get() = p.Accent
+    val AccentSoft get() = p.AccentSoft
+    val Ok get() = p.Ok
+    val OkSoft get() = p.OkSoft
+    val OkText get() = p.OkText
+    val Error get() = p.Error
+    val ErrorSoft get() = p.ErrorSoft
+    val Primary get() = p.Primary
+    val OnPrimary get() = p.OnPrimary
+    val LogoBg get() = p.LogoBg
+
+    private fun systemDark(ctx: Context) =
+        (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    /** Reads the saved theme (call in onCreate; the activity is recreated when the system theme changes). */
+    fun load(ctx: Context) {
+        val code = Store.prefs(ctx).getString("theme", null)
+        mode = ThemeMode.entries.firstOrNull { it.code == code } ?: ThemeMode.SYSTEM
+        isDark = when (mode) {
+            ThemeMode.SYSTEM -> systemDark(ctx)
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        }
+    }
+
+    fun set(ctx: Context, m: ThemeMode) {
+        Store.prefs(ctx).edit().putString("theme", m.code).apply()
+        load(ctx)
+    }
+}
+
+@Composable
+private fun pearlColors(): ColorScheme {
+    val base = if (Pearl.isDark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = Pearl.Accent,
+        onPrimary = Color.White,
+        primaryContainer = Pearl.AccentSoft,
+        onPrimaryContainer = Pearl.Accent,
+        secondary = Pearl.Ink,
+        onSecondary = Pearl.Bg,
+        secondaryContainer = Pearl.AccentSoft,
+        onSecondaryContainer = Pearl.Accent,
+        background = Pearl.Bg,
+        onBackground = Pearl.Ink,
+        surface = Pearl.Card,
+        onSurface = Pearl.Ink,
+        surfaceVariant = Pearl.Track,
+        onSurfaceVariant = Pearl.Muted,
+        surfaceContainerLowest = Pearl.Card,
+        surfaceContainerLow = Pearl.Card,
+        surfaceContainer = Pearl.Card,
+        surfaceContainerHigh = Pearl.Card,
+        surfaceContainerHighest = Pearl.Track,
+        outline = Pearl.Line,
+        outlineVariant = Pearl.Divider,
+        error = Pearl.Error,
+    )
+}
+
+@Composable
+private fun pearlType() = Typography(
     headlineLarge = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.9).sp, lineHeight = 36.sp),
     headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
     titleLarge = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
@@ -82,8 +157,8 @@ private val PearlType = Typography(
 @Composable
 fun PearlTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = PearlColors,
-        typography = PearlType,
+        colorScheme = pearlColors(),
+        typography = pearlType(),
         shapes = Shapes(
             extraSmall = RoundedCornerShape(8.dp),
             small = RoundedCornerShape(12.dp),
@@ -105,7 +180,7 @@ fun PIcon(@DrawableRes id: Int, tint: Color, size: Dp = 22.dp, modifier: Modifie
 @Composable
 fun LogoMark(size: Dp = 36.dp) {
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(Pearl.Ink),
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(Pearl.LogoBg),
         contentAlignment = Alignment.Center
     ) { PIcon(R.drawable.ic_stat_playbeam, Color.White, size * 0.56f) }
 }
@@ -196,7 +271,7 @@ fun PrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    container: Color = Pearl.Ink,
+    container: Color = Pearl.Primary,
 ) {
     Button(
         onClick = onClick,
@@ -204,19 +279,20 @@ fun PrimaryButton(
         modifier = modifier.fillMaxWidth().height(56.dp),
         shape = RoundedCornerShape(18.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = container, contentColor = Color.White,
+            containerColor = container, contentColor = onColor(container),
             disabledContainerColor = Pearl.Track, disabledContentColor = Pearl.Faint,
         ),
     ) {
         if (icon != null) {
-            PIcon(icon, LocalContentColorOf(enabled), 18.dp)
+            PIcon(icon, if (enabled) onColor(container) else Pearl.Faint, 18.dp)
             Spacer(Modifier.width(10.dp))
         }
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
-private fun LocalContentColorOf(enabled: Boolean) = if (enabled) Color.White else Pearl.Faint
+/** Text color on a button: the theme's OnPrimary on the main button, white on colored ones. */
+private fun onColor(container: Color) = if (container == Pearl.Primary) Pearl.OnPrimary else Color.White
 
 @Composable
 fun SecondaryButton(

@@ -245,6 +245,26 @@ abstract class Strings {
     abstract fun sentToPs5(label: String): String
     abstract fun notCompleted(label: String): String
 
+    // appearance & updates
+    abstract val secAppearance: String
+    abstract val themeSystem: String
+    abstract val themeLight: String
+    abstract val themeDark: String
+    abstract val checkUpdates: String
+    abstract val autoCheck: String
+    abstract val autoCheckSub: String
+    abstract val checking: String
+    abstract val upToDate: String
+    abstract val updateAvailable: String
+    abstract fun updateVersions(new: String, current: String): String
+    abstract val whatsNew: String
+    abstract val update: String
+    abstract val later: String
+    abstract val skipVersion: String
+    abstract val downloadingUpdate: String
+    abstract val allowInstall: String
+    abstract val updateCheckFailed: String
+
     // errors
     abstract val notOnWifi: String
     abstract val serverErrorGeneric: String
@@ -447,6 +467,25 @@ object En : Strings() {
     override fun sentToPs5(label: String) = "$label sent to PS5"
     override fun notCompleted(label: String) = "$label — not completed"
 
+    override val secAppearance = "Appearance"
+    override val themeSystem = "System"
+    override val themeLight = "Light"
+    override val themeDark = "Dark"
+    override val checkUpdates = "Check for updates"
+    override val autoCheck = "Check automatically"
+    override val autoCheckSub = "Look for a new version when the app opens"
+    override val checking = "Checking…"
+    override val upToDate = "You have the latest version"
+    override val updateAvailable = "Update available"
+    override fun updateVersions(new: String, current: String) = "Version $new is out (you have $current)."
+    override val whatsNew = "What's new"
+    override val update = "Update"
+    override val later = "Later"
+    override val skipVersion = "Skip this version"
+    override val downloadingUpdate = "Downloading update…"
+    override val allowInstall = "Allow PlayBeam to install apps, then tap Update again."
+    override val updateCheckFailed = "Couldn't check for updates"
+
     override val notOnWifi = "Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5."
     override val serverErrorGeneric = "PlayBeam Server error"
     override fun cantReach(host: String) = "Can't reach the PS5 at $host. Is it on, and is PlayBeam Server (or FTP) running?"
@@ -647,6 +686,25 @@ object Fr : Strings() {
     override val chDone = "Envoi terminé"
     override fun sentToPs5(label: String) = "$label envoyé vers la PS5"
     override fun notCompleted(label: String) = "$label — non terminé"
+
+    override val secAppearance = "Apparence"
+    override val themeSystem = "Système"
+    override val themeLight = "Clair"
+    override val themeDark = "Sombre"
+    override val checkUpdates = "Rechercher des mises à jour"
+    override val autoCheck = "Vérifier automatiquement"
+    override val autoCheckSub = "Chercher une nouvelle version à l'ouverture de l'app"
+    override val checking = "Vérification…"
+    override val upToDate = "Vous avez la dernière version"
+    override val updateAvailable = "Mise à jour disponible"
+    override fun updateVersions(new: String, current: String) = "La version $new est disponible (vous avez $current)."
+    override val whatsNew = "Nouveautés"
+    override val update = "Mettre à jour"
+    override val later = "Plus tard"
+    override val skipVersion = "Ignorer cette version"
+    override val downloadingUpdate = "Téléchargement de la mise à jour…"
+    override val allowInstall = "Autorisez PlayBeam à installer des applis, puis touchez à nouveau Mettre à jour."
+    override val updateCheckFailed = "Impossible de vérifier les mises à jour"
 
     override val notOnWifi = "Votre téléphone n'est pas en Wi-Fi. Connectez-le au même Wi-Fi que la PS5."
     override val serverErrorGeneric = "Erreur de PlayBeam Server"
@@ -853,6 +911,25 @@ object Ar : Strings() {
     override val chDone = "انتهاء الرفع"
     override fun sentToPs5(label: String) = "تم إرسال $label إلى PS5"
     override fun notCompleted(label: String) = "$label — لم يكتمل"
+
+    override val secAppearance = "المظهر"
+    override val themeSystem = "حسب النظام"
+    override val themeLight = "فاتح"
+    override val themeDark = "داكن"
+    override val checkUpdates = "البحث عن تحديث"
+    override val autoCheck = "البحث تلقائياً"
+    override val autoCheckSub = "يبحث عن إصدار جديد عند فتح التطبيق"
+    override val checking = "جارٍ البحث…"
+    override val upToDate = "لديك أحدث إصدار"
+    override val updateAvailable = "يوجد تحديث جديد"
+    override fun updateVersions(new: String, current: String) = "الإصدار $new متوفر (لديك $current)."
+    override val whatsNew = "ما الجديد"
+    override val update = "تحديث"
+    override val later = "لاحقاً"
+    override val skipVersion = "تخطي هذا الإصدار"
+    override val downloadingUpdate = "جارٍ تنزيل التحديث…"
+    override val allowInstall = "اسمح لـ PlayBeam بتثبيت التطبيقات، ثم اضغط تحديث مرة أخرى."
+    override val updateCheckFailed = "تعذّر البحث عن تحديث"
 
     override val notOnWifi = "هاتفك غير متصل بالواي فاي. صِله بنفس شبكة الواي فاي التي عليها PS5."
     override val serverErrorGeneric = "خطأ في PlayBeam Server"

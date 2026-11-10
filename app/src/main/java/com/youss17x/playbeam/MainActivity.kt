@@ -28,14 +28,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // light background → dark status / navigation bar icons
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
-        )
         I18n.load(this)
+        Pearl.load(this)
+        applySystemBars(Pearl.isDark)
         if (savedInstanceState == null) handleShareIntent(intent)
         setContent {
+            // status / navigation bar icons follow the theme
+            LaunchedEffect(Pearl.isDark) { applySystemBars(Pearl.isDark) }
             // Arabic is shown right-to-left
             val dir = if (I18n.lang.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
             CompositionLocalProvider(LocalLayoutDirection provides dir) {
@@ -46,6 +45,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Light theme → dark bar icons, dark theme → light bar icons. */
+    private fun applySystemBars(dark: Boolean) {
+        val style = if (dark) SystemBarStyle.dark(AColor.TRANSPARENT)
+        else SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -127,6 +133,15 @@ fun App(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
     val ctx = LocalContext.current
     val state = remember { AppState(ctx) }
     var tab by remember { mutableStateOf(Tab.Upload) }
+
+    // look for a new version on GitHub when the app opens
+    var update by remember { mutableStateOf<AppRelease?>(null) }
+    LaunchedEffect(Unit) {
+        if (Store.prefs(ctx).getBoolean("autoUpdate", true)) {
+            update = runCatching { Updater.available(ctx) }.getOrNull()
+        }
+    }
+    update?.let { UpdateDialog(it, onDismiss = { update = null }) }
 
     LaunchedEffect(sharedUris) {
         if (sharedUris.isNotEmpty()) {

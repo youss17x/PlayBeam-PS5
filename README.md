@@ -7,6 +7,8 @@ An Android app to send files and folders from your phone to your PS5 over Wi-Fi 
 Five tabs: **Upload · Files · Payload · History · Settings**.
 
 Languages: **English**, **Français**, **العربية** (right-to-left) — Settings → Language.
+Themes: **System**, **Light**, **Dark** — Settings → Appearance.
+Updates: the app checks GitHub Releases and offers to install new versions.
 
 Clean, bright **Pearl** design: settings-style cards, one-tap console and destination sheets.
 
@@ -43,10 +45,14 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Android 8.0 or newer
 
 ## Download
-Grab the latest APK from the **Actions** tab → latest **Build APK** run → **Artifacts** → `PlayBeam-debug`.
+Get the latest APK from the [**Releases**](../../releases/latest) page. Once installed, PlayBeam tells you when a new version is out and updates itself.
 
 ## Building
-The APK is built with GitHub Actions: **Actions** tab → **Build APK** → **Run workflow**.
+- Test builds: **Actions** → **Build APK** → **Run workflow** (APK in the run's Artifacts).
+- New version: **Actions** → **Release** → **Run workflow**, type the version (e.g. `1.0.0`) and what's new.
+  It publishes a GitHub release with the APK and the PS5 payload; the app picks it up as an update.
+- Every build is signed with the project key from the repository secrets
+  `SIGNING_KEYSTORE_BASE64`, `SIGNING_STORE_PASSWORD` and `SIGNING_KEY_ALIAS`.
 To build locally, open the project in Android Studio and press **Run**.
 
 ## Code structure
@@ -56,6 +62,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `UploadScreen.kt` | Upload tab + destination sheet |
 | `SettingsScreen.kt` | Settings tab (PS5, transfers, downloads, about) |
 | `ConsoleEditor.kt` | Choosing the PS5 (saved consoles, Find my PS5, IP) |
+| `Updater.kt`, `UpdateDialog.kt` | Update check on GitHub Releases, download and install |
 | `Strings.kt` | All texts in English, French and Arabic |
 | `Ui.kt` | Pearl theme (colors, type) and shared UI building blocks |
 | `BrowserScreen.kt` | PS5 file browser (incl. download to phone) |

@@ -1,0 +1,86 @@
+name: Release
+
+# Publishes a new version: Actions tab → Release → Run workflow → type the version (e.g. 1.0.0).
+# The app finds it automatically (Settings → Check for updates) and offers to install it.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number, e.g. 1.0.0"
+        required: true
+      notes:
+        description: "What's new (shown in the app's update window)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  PS5_SDK_REF: 8816aee4cd88fc47b07819d2b6f4769c095a074b
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check signing secrets
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "::error::Add the SIGNING_* repository secrets first (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/playbeam.jks"
+          echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/playbeam.jks" >> "$GITHUB_ENV"
+
+      # ---- PS5 payload (PlayBeam Server) ----
+      - name: Install PS5 payload SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18
+          mkdir /tmp/ps5sdk-src && cd /tmp/ps5sdk-src
+          git init -q
+          git fetch -q --depth 1 https://github.com/ps5-payload-dev/sdk "$PS5_SDK_REF"
+          git checkout -q FETCH_HEAD
+          make -j4 DESTDIR="$HOME/ps5sdk" install
+
+      - name: Build PlayBeam Server payload
+        run: |
+          make -C payload PS5_PAYLOAD_SDK="$HOME/ps5sdk"
+          mkdir -p app/src/main/assets
+          cp payload/playbeam-server.elf app/src/main/assets/
+
+      # ---- Android app ----
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Build release APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          gradle assembleRelease --no-daemon -PversionName="$VERSION" -PversionCode="${{ github.run_number }}0"
+          cp app/build/outputs/apk/release/*.apk "PlayBeam-$VERSION.apk"
+          cp payload/playbeam-server.elf "playbeam-server-$VERSION.elf"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: PlayBeam ${{ env.VERSION }}
+          body: ${{ inputs.notes }}
+          files: |
+            PlayBeam-${{ env.VERSION }}.apk
+            playbeam-server-${{ env.VERSION }}.elf
