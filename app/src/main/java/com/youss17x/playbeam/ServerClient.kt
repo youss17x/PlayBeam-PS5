@@ -75,6 +75,34 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
 
     fun rmtree(path: String) { command("RMTREE $path") }
 
+    /** PS5 info as key=value pairs: model, fw, uptime, cpu_temp, soc_temp, cpu_mhz, version. */
+    fun info(): Map<String, String> {
+        send("INFO")
+        val out = mutableMapOf<String, String>()
+        while (true) {
+            val line = readLine()
+            if (line.startsWith("OK") || line.startsWith("ERR")) { ok(line); return out }
+            val eq = line.indexOf('=')
+            if (eq > 0) out[line.substring(0, eq)] = line.substring(eq + 1)
+        }
+    }
+
+    /** Plugged drives: "/data" plus /mnt/usbN and /mnt/extN that are really mounted, with (total, free). */
+    fun drives(): List<Pair<String, Pair<Long, Long>>> {
+        val out = mutableListOf<Pair<String, Pair<Long, Long>>>()
+        runCatching { out += "/data" to df("/data") }
+        val mntTotal = runCatching { df("/mnt").first }.getOrNull()
+        val names = runCatching { list("/mnt") }.getOrDefault(emptyList())
+            .filter { it.isDir && Regex("(usb|ext)\\d+").matches(it.name) }
+            .sortedBy { it.name }
+        for (n in names) {
+            val root = "/mnt/${n.name}"
+            val d = runCatching { df(root) }.getOrNull() ?: continue
+            if (d.first > 0 && d.first != mntTotal) out += root to d
+        }
+        return out
+    }
+
     fun stat(path: String): RemoteDetails {
         val p = command("STAT $path").split(' ')
         val size = p.getOrNull(2)?.toLongOrNull() ?: -1

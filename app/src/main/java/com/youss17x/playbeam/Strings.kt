@@ -265,6 +265,23 @@ abstract class Strings {
     abstract val allowInstall: String
     abstract val updateCheckFailed: String
 
+    // PS5 info & about
+    abstract val ps5Info: String
+    abstract val liveSensors: String
+    abstract val autoRefresh: String
+    abstract val cpuTemp: String
+    abstract val socTemp: String
+    abstract val cpuFreq: String
+    abstract val uptime: String
+    abstract fun firmware(fw: String): String
+    abstract val storage: String
+    abstract val internalStorage: String
+    abstract fun usedOf(used: String, total: String): String
+    abstract val infoNeedsServer: String
+    abstract val appTagline: String
+    abstract val openSource: String
+    abstract val madeBy: String
+
     // errors
     abstract val notOnWifi: String
     abstract val serverErrorGeneric: String
@@ -486,6 +503,22 @@ object En : Strings() {
     override val allowInstall = "Allow PlayBeam to install apps, then tap Update again."
     override val updateCheckFailed = "Couldn't check for updates"
 
+    override val ps5Info = "PS5 info"
+    override val liveSensors = "Live sensors"
+    override val autoRefresh = "Updates automatically"
+    override val cpuTemp = "CPU"
+    override val socTemp = "SoC"
+    override val cpuFreq = "CPU frequency"
+    override val uptime = "Uptime"
+    override fun firmware(fw: String) = "Firmware $fw"
+    override val storage = "Storage"
+    override val internalStorage = "PS5 (internal)"
+    override fun usedOf(used: String, total: String) = "$used used of $total"
+    override val infoNeedsServer = "Start PlayBeam Server to see your PS5's details, temperatures and storage."
+    override val appTagline = "Send files and folders from your phone to your jailbroken PS5 — fast, simple and free."
+    override val openSource = "Open source"
+    override val madeBy = "Made by youss17x"
+
     override val notOnWifi = "Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5."
     override val serverErrorGeneric = "PlayBeam Server error"
     override fun cantReach(host: String) = "Can't reach the PS5 at $host. Is it on, and is PlayBeam Server (or FTP) running?"
@@ -705,6 +738,22 @@ object Fr : Strings() {
     override val downloadingUpdate = "Téléchargement de la mise à jour…"
     override val allowInstall = "Autorisez PlayBeam à installer des applis, puis touchez à nouveau Mettre à jour."
     override val updateCheckFailed = "Impossible de vérifier les mises à jour"
+
+    override val ps5Info = "Infos PS5"
+    override val liveSensors = "Capteurs en direct"
+    override val autoRefresh = "Mise à jour automatique"
+    override val cpuTemp = "CPU"
+    override val socTemp = "SoC"
+    override val cpuFreq = "Fréquence CPU"
+    override val uptime = "Allumée depuis"
+    override fun firmware(fw: String) = "Firmware $fw"
+    override val storage = "Stockage"
+    override val internalStorage = "PS5 (interne)"
+    override fun usedOf(used: String, total: String) = "$used utilisés sur $total"
+    override val infoNeedsServer = "Lancez PlayBeam Server pour voir les détails, températures et stockage de votre PS5."
+    override val appTagline = "Envoyez fichiers et dossiers de votre téléphone vers votre PS5 jailbreakée — rapide, simple et gratuit."
+    override val openSource = "Open source"
+    override val madeBy = "Créé par youss17x"
 
     override val notOnWifi = "Votre téléphone n'est pas en Wi-Fi. Connectez-le au même Wi-Fi que la PS5."
     override val serverErrorGeneric = "Erreur de PlayBeam Server"
@@ -930,6 +979,22 @@ object Ar : Strings() {
     override val downloadingUpdate = "جارٍ تنزيل التحديث…"
     override val allowInstall = "اسمح لـ PlayBeam بتثبيت التطبيقات، ثم اضغط تحديث مرة أخرى."
     override val updateCheckFailed = "تعذّر البحث عن تحديث"
+
+    override val ps5Info = "معلومات PS5"
+    override val liveSensors = "المستشعرات المباشرة"
+    override val autoRefresh = "تتحدث تلقائياً"
+    override val cpuTemp = "المعالج"
+    override val socTemp = "الشريحة SoC"
+    override val cpuFreq = "تردد المعالج"
+    override val uptime = "مدة التشغيل"
+    override fun firmware(fw: String) = "الإصدار $fw"
+    override val storage = "التخزين"
+    override val internalStorage = "PS5 (داخلي)"
+    override fun usedOf(used: String, total: String) = "$used مستخدمة من $total"
+    override val infoNeedsServer = "شغّل PlayBeam Server لترى تفاصيل جهازك ودرجات الحرارة والمساحة."
+    override val appTagline = "أرسل الملفات والمجلدات من هاتفك إلى PS5 المعدّل — بسرعة وسهولة ومجاناً."
+    override val openSource = "مفتوح المصدر"
+    override val madeBy = "من تطوير youss17x"
 
     override val notOnWifi = "هاتفك غير متصل بالواي فاي. صِله بنفس شبكة الواي فاي التي عليها PS5."
     override val serverErrorGeneric = "خطأ في PlayBeam Server"

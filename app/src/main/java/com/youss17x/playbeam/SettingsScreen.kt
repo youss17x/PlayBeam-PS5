@@ -12,12 +12,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-private const val REPO_URL = "https://github.com/youss17x/PlayBeam"
 
 @Composable
 fun SettingsScreen(state: AppState) {
@@ -93,6 +94,11 @@ fun SettingsScreen(state: AppState) {
         SectionLabel(S.secServer)
         ServerCard(state)
 
+        // ---- PS5 info (model, sensors, drives) ----
+        Spacer(Modifier.height(4.dp))
+        SectionLabel(S.ps5Info)
+        Ps5InfoCard(state)
+
         // ---- transfers ----
         Spacer(Modifier.height(4.dp))
         SectionLabel(S.secTransfers)
@@ -119,8 +125,8 @@ fun SettingsScreen(state: AppState) {
         // ---- about ----
         Spacer(Modifier.height(4.dp))
         SectionLabel(S.secAbout)
+        AboutCard(version)
         PearlCard {
-            SettingsRow(S.version, version)
             SettingsRow(S.checkUpdates, updateStatus, onClick = {
                 if (checking) return@SettingsRow
                 scope.launch {
@@ -138,12 +144,51 @@ fun SettingsScreen(state: AppState) {
             SettingsRow(S.autoCheck, subtitle = S.autoCheckSub, trailing = {
                 PearlSwitch(autoUpdate) { autoUpdate = it; prefs.edit().putBoolean("autoUpdate", it).apply() }
             })
-            SettingsRow(S.serverPort, "$SERVER_PORT")
-            SettingsRow(S.sourceCode, "GitHub", divider = false, onClick = {
-                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }
-            }, trailing = { PIcon(R.drawable.ic_link, Pearl.Faint, 16.dp) })
+            SettingsRow(S.serverPort, "$SERVER_PORT", divider = false)
         }
-        Text("PlayBeam by youss17x", style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(start = 4.dp, top = 4.dp))
     }
+}
+
+/** App identity and the author's links, like an "About" page. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AboutCard(version: String) {
+    val ctx = LocalContext.current
+    fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+
+    PearlCard {
+        Column(
+            Modifier.fillMaxWidth().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            LogoMark(72.dp)
+            Text("PlayBeam", style = MaterialTheme.typography.headlineSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip("v$version", Pearl.Ink, Pearl.Track)
+                Chip(S.openSource, Pearl.OkText, Pearl.OkSoft)
+            }
+            Text(S.appTagline, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Links.all.filter { it.second.isNotBlank() }.forEach { (label, url) ->
+                    SecondaryButton(label, R.drawable.ic_link, { open(url) })
+                }
+            }
+            Text(S.madeBy, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** The author's pages. Leave a link empty to hide its button. */
+object Links {
+    const val GITHUB = "https://github.com/youss17x"
+    const val X = ""
+    const val DISCORD = ""
+    const val FACEBOOK = ""
+
+    val all = listOf("GitHub" to GITHUB, "X" to X, "Discord" to DISCORD, "Facebook" to FACEBOOK)
 }

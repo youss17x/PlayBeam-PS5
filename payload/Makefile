@@ -15,7 +15,7 @@ endif
 ELF := playbeam-server.elf
 
 CFLAGS := -Wall -O2 -Wno-unused-function
-LDLIBS := -lpthread
+LDLIBS := -lpthread -lkernel_sys
 
 all: $(ELF)
 

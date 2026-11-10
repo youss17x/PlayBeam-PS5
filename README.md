@@ -37,6 +37,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - **Download to phone**: copy files or whole folders from the PS5 to your phone
 - **Payload sender**: send `.elf` / `.bin` payloads to the PS5 loader (e.g. to start the FTP server),
   with a list of recent payloads for one-tap re-sending
+- **PS5 info** in Settings: model, firmware, live CPU / SoC temperatures, uptime and free space on every drive
 - Quick destination presets: `/data/homebrew`, `/data/etaHEN/games`, `/mnt/usb0`
 
 ## Requirements
@@ -63,6 +64,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `SettingsScreen.kt` | Settings tab (PS5, transfers, downloads, about) |
 | `ConsoleEditor.kt` | Choosing the PS5 (saved consoles, Find my PS5, IP) |
 | `Updater.kt`, `UpdateDialog.kt` | Update check on GitHub Releases, download and install |
+| `Ps5InfoCard.kt` | PS5 model, firmware, live sensors and storage |
 | `Strings.kt` | All texts in English, French and Arabic |
 | `Ui.kt` | Pearl theme (colors, type) and shared UI building blocks |
 | `BrowserScreen.kt` | PS5 file browser (incl. download to phone) |

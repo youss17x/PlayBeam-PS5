@@ -7,6 +7,7 @@ A small PS5 payload that receives files from the PlayBeam Android app.
 - Resume support (continue a file from an offset)
 - Extracts `.zip` files directly on the PS5 (ZIP64 supported, via [miniz](https://github.com/richgel999/miniz), MIT — see `miniz-LICENSE`)
 - Lists, downloads, copies, moves, renames and deletes files, shows sizes and free space (used by the app's PS5 file browser)
+- Reports the PS5 model, firmware, temperatures, CPU frequency and uptime
 - Shows PS5 notifications when it starts and when a ZIP is extracted
 
 ## Start it
@@ -38,6 +39,7 @@ One command per line (`\n`), paths are absolute and take the rest of the line:
 | `GET <path>` | `OK <size>` then the bytes / `ERR` |
 | `STAT <path>` | `OK F <size> <mtime>` / `OK D <total> <mtime> <files> <folders>` |
 | `DF <path>` | `OK <total bytes> <free bytes>` |
+| `INFO` | `key=value` lines (model, fw, uptime, cpu_temp, soc_temp, cpu_mhz, version), then `OK` |
 | `COPY <from>⇥<to>` | `PROG` lines, then `OK` / `ERR` (file or folder, on the PS5 itself) |
 | `MOVE <from>⇥<to>` | rename, or copy + delete across drives; `PROG` lines, then `OK` / `ERR` |
 | `QUIT` | closes the connection |

@@ -19,6 +19,8 @@
      GET <path>                    -> OK <size>, then <size> raw bytes | ERR <reason>
      STAT <path>                   -> OK F <size> <mtime> | OK D <total size> <mtime> <files> <folders>
      DF <path>                     -> OK <total bytes> <free bytes>
+     INFO                          -> key=value lines (model, fw, cpu_temp, soc_temp, cpu_mhz,
+                                      uptime, version), then OK
      COPY <from>\t<to>             -> PROG <done> <total> lines, then OK | ERR   (file or folder)
      MOVE <from>\t<to>             -> like COPY; a plain rename when on the same drive
      QUIT                          -> closes this connection
@@ -42,13 +44,15 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/sysctl.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "miniz.h"
 
-#define SERVER_VERSION "1.2"
+#define SERVER_VERSION "1.3"
 #define SERVER_PORT 9113
 #define LINE_MAX_LEN 4096
 #define IO_BUF_SIZE (4 * 1024 * 1024)
@@ -62,6 +66,12 @@ typedef struct notify_request {
 } notify_request_t;
 
 int sceKernelSendNotificationRequest(int, notify_request_t *, size_t, int);
+
+/* hardware info (libkernel) */
+int sceKernelGetHwModelName(char *);
+long sceKernelGetCpuFrequency(void);
+int sceKernelGetCpuTemperature(int *);
+int sceKernelGetSocSensorTemperature(int, int *);
 
 static void notify(const char *fmt, ...) {
   notify_request_t req;
@@ -381,6 +391,34 @@ static void cmd_df(conn_t *c, const char *path) {
   send_line(c, "OK %llu %llu", (unsigned long long)v.f_blocks * unit, (unsigned long long)v.f_bavail * unit);
 }
 
+static void cmd_info(conn_t *c) {
+  char buf[512];
+  int temp = 0;
+
+  buf[0] = '\0';
+  if (sceKernelGetHwModelName(buf) == 0 && buf[0]) send_line(c, "model=%s", buf);
+
+  size_t len = sizeof buf - 1;
+  if (sysctlbyname("kern.version", buf, &len, NULL, 0) == 0) {
+    buf[len < sizeof buf ? len : sizeof buf - 1] = '\0';
+    for (char *p = buf; *p; p++) if (*p == '\n' || *p == '\t') *p = ' ';
+    send_line(c, "fw=%s", buf);
+  }
+
+  struct timeval boot;
+  len = sizeof boot;
+  if (sysctlbyname("kern.boottime", &boot, &len, NULL, 0) == 0 && boot.tv_sec > 0) {
+    send_line(c, "uptime=%lld", (long long)(time(NULL) - boot.tv_sec));
+  }
+
+  if (sceKernelGetCpuTemperature(&temp) == 0) send_line(c, "cpu_temp=%d", temp);
+  if (sceKernelGetSocSensorTemperature(0, &temp) == 0) send_line(c, "soc_temp=%d", temp);
+  long hz = sceKernelGetCpuFrequency();
+  if (hz > 0) send_line(c, "cpu_mhz=%ld", hz / (1000 * 1000));
+  send_line(c, "version=" SERVER_VERSION);
+  send_line(c, "OK");
+}
+
 typedef struct copy_ctx {
   conn_t *c;
   unsigned long long done;
@@ -625,6 +663,8 @@ static void *client_thread(void *arg) {
       if (cmd_get(c, line + 4) != 0) break;
     } else if (strncmp(line, "STAT ", 5) == 0) {
       cmd_stat(c, line + 5);
+    } else if (strcmp(line, "INFO") == 0) {
+      cmd_info(c);
     } else if (strncmp(line, "DF ", 3) == 0) {
       cmd_df(c, line + 3);
     } else if (strncmp(line, "COPY ", 5) == 0) {
