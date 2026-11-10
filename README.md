@@ -13,6 +13,10 @@
   <img src="docs/screenshots/ps5-info.jpg" width="200" alt="PS5 info">
 </p>
 
+<p align="center">
+  <img src="docs/splash.gif" width="220" alt="PlayBeam opening animation">
+</p>
+
 ## Features
 
 Five tabs: **Upload · Files · Payload · History · Settings**.
