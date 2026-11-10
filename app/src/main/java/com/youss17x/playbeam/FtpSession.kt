@@ -20,6 +20,9 @@ import java.net.SocketException
 
 data class RemoteFile(val name: String, val isDir: Boolean, val size: Long)
 
+/** Details of a file or folder. For folders [size] is the total of everything inside (-1 if unknown). */
+data class RemoteDetails(val isDir: Boolean, val size: Long, val mtime: Long?, val files: Int, val dirs: Int)
+
 fun joinPath(dir: String, name: String) = if (dir.endsWith("/")) dir + name else "$dir/$name"
 fun parentPath(path: String) = path.trimEnd('/').substringBeforeLast('/').ifEmpty { "/" }
 
@@ -33,6 +36,14 @@ interface RemoteFs {
     suspend fun deletePath(path: String, isDir: Boolean)
     suspend fun download(ctx: Context, remotePath: String, isDir: Boolean, treeUri: Uri, onBytes: (String, Long) -> Unit)
     fun closeAsync()
+
+    /** Copy / free space / folder sizes need PlayBeam Server. */
+    val canCopy: Boolean
+    suspend fun copy(from: String, to: String, onProgress: (Long, Long) -> Unit)
+    suspend fun move(from: String, to: String, onProgress: (Long, Long) -> Unit)
+    suspend fun details(path: String, isDir: Boolean): RemoteDetails
+    /** Total and free bytes, or null if unknown. */
+    suspend fun freeSpace(path: String): Pair<Long, Long>?
 }
 
 /** Creates a file in a phone folder (SAF document), guessing its type from the name. */
@@ -53,6 +64,34 @@ internal fun treeRoot(treeUri: Uri): Uri =
 /** One FTP connection used by the PS5 file browser. All calls run on the IO thread, one at a time. */
 class FtpSession(private val host: String, private val port: Int) : RemoteFs {
     override val via = "FTP"
+    override val canCopy = false
+
+    override suspend fun copy(from: String, to: String, onProgress: (Long, Long) -> Unit) {
+        throw IOException("Copying needs PlayBeam Server (start it in Settings)")
+    }
+
+    override suspend fun move(from: String, to: String, onProgress: (Long, Long) -> Unit) = io {
+        if (!this.rename(from, to)) throw IOException("Can't move: ${replyString.trim()}")
+    }
+
+    override suspend fun details(path: String, isDir: Boolean): RemoteDetails = io {
+        val mtime = runCatching {
+            // "YYYYMMDDhhmmss" → seconds since 1970
+            getModificationTime(path)?.trim()?.takeLast(14)?.let {
+                java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }.parse(it)?.time?.div(1000)
+            }
+        }.getOrNull()
+        if (isDir) RemoteDetails(true, -1, mtime, 0, 0)
+        else {
+            val size = runCatching { if (sendCommand("SIZE", path) == 213) replyString.trim().substringAfter(' ').toLong() else -1L }
+                .getOrDefault(-1L)
+            RemoteDetails(false, size, mtime, 1, 0)
+        }
+    }
+
+    override suspend fun freeSpace(path: String): Pair<Long, Long>? = null
     private val ftp = FTPClient()
     private val mutex = Mutex()
 

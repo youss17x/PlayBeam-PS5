@@ -75,6 +75,39 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
 
     fun rmtree(path: String) { command("RMTREE $path") }
 
+    fun stat(path: String): RemoteDetails {
+        val p = command("STAT $path").split(' ')
+        val size = p.getOrNull(2)?.toLongOrNull() ?: -1
+        val mtime = p.getOrNull(3)?.toLongOrNull()
+        return if (p.getOrNull(1) == "D") {
+            RemoteDetails(true, size, mtime, p.getOrNull(4)?.toIntOrNull() ?: 0, p.getOrNull(5)?.toIntOrNull() ?: 0)
+        } else {
+            RemoteDetails(false, size, mtime, 1, 0)
+        }
+    }
+
+    /** Total and free bytes of the drive holding [path]. */
+    fun df(path: String): Pair<Long, Long> {
+        val p = command("DF $path").split(' ')
+        return (p.getOrNull(1)?.toLongOrNull() ?: 0) to (p.getOrNull(2)?.toLongOrNull() ?: 0)
+    }
+
+    /** Copies (or moves) a file or folder on the PS5 itself. [to] must not exist yet. */
+    fun copy(from: String, to: String, move: Boolean, onProgress: (Long, Long) -> Unit) {
+        require('\t' !in from && '\t' !in to) { "Invalid name" }
+        send("${if (move) "MOVE" else "COPY"} $from\t$to")
+        while (true) {
+            val line = readLine()
+            if (line.startsWith("PROG ")) {
+                val parts = line.split(' ')
+                onProgress(parts.getOrNull(1)?.toLongOrNull() ?: 0, parts.getOrNull(2)?.toLongOrNull() ?: 0)
+                continue
+            }
+            ok(line)
+            return
+        }
+    }
+
     fun rename(from: String, to: String) {
         require('\t' !in from && '\t' !in to) { "Invalid name" }
         command("RENAME $from\t$to")

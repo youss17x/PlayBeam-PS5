@@ -29,7 +29,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 **PS5**
 - **Find my PS5**: scans the local network for the PS5 FTP server — no need to type the IP
 - **Saved consoles**: keep several PS5s by name and switch with one tap
-- **PS5 file browser**: browse, create folders, rename, delete, pick the upload destination
+- **Files** (PS5 file manager): switch between PS5 and USB drives (with free space), copy, cut & paste, move to another drive, rename, delete, details; the `homebrew` folder is shown in green
 - **Download to phone**: copy files or whole folders from the PS5 to your phone
 - **Payload sender**: send `.elf` / `.bin` payloads to the PS5 loader (e.g. to start the FTP server),
   with a list of recent payloads for one-tap re-sending

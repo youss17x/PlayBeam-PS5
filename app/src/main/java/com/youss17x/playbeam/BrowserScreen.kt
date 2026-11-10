@@ -2,32 +2,56 @@ package com.youss17x.playbeam
 
 import android.content.Intent
 import android.net.Uri
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.Date
+
+/** A drive shown in the storage switcher. */
+private data class Storage(val label: String, val root: String, val isUsb: Boolean)
+
+/** Something copied or cut, waiting for "Paste here". */
+private data class ClipItem(val path: String, val file: RemoteFile, val cut: Boolean)
 
 private sealed interface BrowserDialog {
     data object NewFolder : BrowserDialog
     data class Rename(val file: RemoteFile) : BrowserDialog
     data class Delete(val file: RemoteFile) : BrowserDialog
+    data class MoveTo(val file: RemoteFile) : BrowserDialog
+    data class Details(val file: RemoteFile) : BrowserDialog
+}
+
+private val DRIVE_NAME = Regex("(usb|ext)(\\d+)")
+
+private fun isHomebrew(f: RemoteFile) = f.isDir && f.name.equals("homebrew", ignoreCase = true)
+
+/** "game.zip" → "game (copy).zip", "folder" → "folder (copy)". */
+private fun copyName(name: String, isDir: Boolean): String {
+    val dot = name.lastIndexOf('.')
+    return if (isDir || dot <= 0) "$name (copy)" else "${name.substring(0, dot)} (copy)${name.substring(dot)}"
 }
 
 /** Browses the PS5 (PlayBeam Server if running, else FTP). [onPick] returns the chosen upload destination. */
@@ -49,43 +73,125 @@ fun BrowserScreen(
     val current = session
     DisposableEffect(current) { onDispose { current?.closeAsync() } }
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
 
     var path by remember { mutableStateOf(startPath.trim().ifBlank { "/" }) }
     var items by remember { mutableStateOf<List<RemoteFile>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     var dialog by remember { mutableStateOf<BrowserDialog?>(null) }
 
+    // ---- drives ----
+    var storages by remember { mutableStateOf(listOf(Storage("PS5", "/data", false))) }
+    var free by remember { mutableStateOf<Map<String, Pair<Long, Long>>>(emptyMap()) }
+
+    LaunchedEffect(current) {
+        val s = current ?: return@LaunchedEffect
+        val mnt = runCatching { s.list("/mnt") }.getOrDefault(emptyList())
+            .filter { it.isDir && DRIVE_NAME.matches(it.name) }
+            .sortedBy { it.name }
+        val space = mutableMapOf<String, Pair<Long, Long>>()
+        s.freeSpace("/data")?.let { space["/data"] = it }
+        val mntTotal = s.freeSpace("/mnt")?.first
+        val drives = mnt.filter { d ->
+            val root = "/mnt/${d.name}"
+            val df = s.freeSpace(root)
+            if (df != null) {
+                // an empty mount point reports the same size as /mnt itself: nothing plugged in
+                val plugged = df.first > 0 && df.first != mntTotal
+                if (plugged) space[root] = df
+                plugged
+            } else {
+                // FTP: no free-space info, keep folders that have something in them
+                runCatching { s.list(root).isNotEmpty() }.getOrDefault(false)
+            }
+        }
+        val usbCount = drives.count { it.name.startsWith("usb") }
+        storages = listOf(Storage("PS5", "/data", false)) + drives.map { d ->
+            val (kind, n) = DRIVE_NAME.matchEntire(d.name)!!.destructured
+            val num = n.toInt() + 1
+            val label = when {
+                kind == "usb" && usbCount == 1 -> "USB"
+                kind == "usb" -> "USB $num"
+                num == 1 -> "Extended"
+                else -> "Extended $num"
+            }
+            Storage(label, "/mnt/${d.name}", true)
+        }
+        free = space
+    }
+
+    // ---- copy / move with progress ----
+    var clip by remember { mutableStateOf<ClipItem?>(null) }
+    var opLabel by remember { mutableStateOf<String?>(null) }
+    var opDone by remember { mutableLongStateOf(0L) }
+    var opTotal by remember { mutableLongStateOf(0L) }
+    var opJob by remember { mutableStateOf<Job?>(null) }
+
+    fun runOp(label: String, done: String, block: suspend ((Long, Long) -> Unit) -> Unit) {
+        opJob = scope.launch {
+            opLabel = label; opDone = 0; opTotal = 0; error = null; info = null
+            try {
+                block { d, t -> opDone = d; opTotal = t }
+                info = done
+            } catch (e: CancellationException) {
+                info = "Stopped"
+            } catch (e: Exception) {
+                error = friendlyError(ctx, host, e)
+            }
+            opLabel = null
+            opJob = null
+            reloadKey++
+        }
+    }
+
+    fun paste() {
+        val c = clip ?: return
+        val s = current ?: return
+        var name = c.file.name
+        if (joinPath(path, name) == c.path) {
+            if (c.cut) { clip = null; return } // moving onto itself: nothing to do
+            name = copyName(name, c.file.isDir)
+        }
+        val dest = joinPath(path, name)
+        if (items.any { it.name == name }) {
+            error = "“$name” already exists here"
+            return
+        }
+        clip = null
+        if (c.cut) runOp("Moving ${c.file.name}", "✅ Moved ${c.file.name}") { p -> s.move(c.path, dest, p) }
+        else runOp("Copying ${c.file.name}", "✅ Copied ${c.file.name}") { p -> s.copy(c.path, dest, p) }
+    }
+
     // ---- download to phone ----
-    val ctx = LocalContext.current
     val prefs = remember { Store.prefs(ctx) }
     var downloadTree by remember { mutableStateOf(prefs.getString("downloadTree", null)?.let(Uri::parse)) }
     var pendingDownload by remember { mutableStateOf<RemoteFile?>(null) }
     var downloadJob by remember { mutableStateOf<Job?>(null) }
     var downloadName by remember { mutableStateOf("") }
     var downloadBytes by remember { mutableLongStateOf(0L) }
-    var downloadMsg by remember { mutableStateOf<String?>(null) }
 
     fun hasWriteAccess(uri: Uri) =
         ctx.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
 
     fun startDownload(f: RemoteFile, tree: Uri) {
         val remote = joinPath(path, f.name)
-        downloadMsg = null
+        info = null
         downloadBytes = 0
         downloadName = f.name
         downloadJob = scope.launch {
             try {
-                session!!.download(ctx, remote, f.isDir, tree) { name, n ->
+                current!!.download(ctx, remote, f.isDir, tree) { name, n ->
                     downloadName = name
                     downloadBytes += n
                 }
-                downloadMsg = "✅ ${f.name} saved to your phone (${formatBytes(downloadBytes)})"
+                info = "✅ ${f.name} saved to your phone (${formatBytes(downloadBytes)})"
             } catch (e: CancellationException) {
-                downloadMsg = "⏹ Download stopped"
+                info = "Download stopped"
             } catch (e: Exception) {
-                downloadMsg = "❌ ${friendlyError(ctx, host, e)}"
+                error = friendlyError(ctx, host, e)
             }
             downloadJob = null
         }
@@ -116,11 +222,11 @@ fun BrowserScreen(
 
     LaunchedEffect(path, reloadKey, current) {
         onPathChange(path)
-        val session = current ?: run { loading = true; return@LaunchedEffect }
+        val s = current ?: run { loading = true; return@LaunchedEffect }
         loading = true
         error = null
         try {
-            items = session.list(path)
+            items = s.list(path)
         } catch (e: Exception) {
             items = emptyList()
             error = friendlyError(ctx, host, e)
@@ -128,11 +234,12 @@ fun BrowserScreen(
         loading = false
     }
 
-    fun act(block: suspend () -> Unit) {
+    fun act(block: suspend (RemoteFs) -> Unit) {
+        val s = current ?: return
         scope.launch {
             loading = true
             try {
-                block()
+                block(s)
                 reloadKey++
             } catch (e: Exception) {
                 error = friendlyError(ctx, host, e)
@@ -141,12 +248,15 @@ fun BrowserScreen(
         }
     }
 
+    val activeStorage = storages.lastOrNull { path == it.root || path.startsWith(it.root + "/") }
+
     Column(
         Modifier.fillMaxSize().background(Pearl.Bg)
             .then(if (onClose != null) Modifier.systemBarsPadding() else Modifier)
             .padding(horizontal = 20.dp, vertical = if (onClose != null) 12.dp else 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ---- title ----
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (onClose != null) IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
             Column(Modifier.weight(1f)) {
@@ -157,6 +267,17 @@ fun BrowserScreen(
             IconButton(onClick = { dialog = BrowserDialog.NewFolder }) { PIcon(R.drawable.ic_plus, Pearl.Ink) }
         }
 
+        // ---- drives ----
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            storages.forEach { st ->
+                StorageChip(st, selected = st == activeStorage, space = free[st.root]) { path = st.root }
+            }
+        }
+
+        // ---- path ----
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(
                 onClick = { path = parentPath(path) },
@@ -164,7 +285,7 @@ fun BrowserScreen(
                 shape = RoundedCornerShape(12.dp),
                 color = Pearl.Card,
                 border = BorderStroke(1.dp, Pearl.Line),
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(40.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     PIcon(R.drawable.ic_upload, if (path != "/") Pearl.Ink else Pearl.Faint, 18.dp)
@@ -174,26 +295,19 @@ fun BrowserScreen(
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         }
 
-        if (loading) PearlProgress(null)
+        if (loading && opLabel == null) PearlProgress(null)
         error?.let { Text(it, color = Pearl.Error, style = MaterialTheme.typography.bodyMedium) }
+        info?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 
-        if (downloadJob != null) {
-            PearlCard {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Downloading $downloadName", style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(formatBytes(downloadBytes), style = MaterialTheme.typography.bodySmall)
-                        }
-                        TextButton(onClick = { downloadJob?.cancel() }) { Text("Stop", color = Pearl.Error) }
-                    }
-                    PearlProgress(null)
-                }
-            }
+        // ---- running copy / move / download ----
+        opLabel?.let { label ->
+            ProgressCard(label, opDone, opTotal, onStop = { opJob?.cancel() })
         }
-        downloadMsg?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (downloadJob != null) {
+            ProgressCard("Downloading $downloadName", downloadBytes, 0, onStop = { downloadJob?.cancel() })
+        }
 
+        // ---- list ----
         PearlCard(Modifier.weight(1f)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 if (!loading && error == null && items.isEmpty()) {
@@ -203,39 +317,61 @@ fun BrowserScreen(
                     }
                 }
                 itemsIndexed(items, key = { _, it -> it.name }) { idx, f ->
+                    val full = joinPath(path, f.name)
                     FileRow(
                         f,
-                        onOpen = { path = joinPath(path, f.name) },
-                        onRename = { dialog = BrowserDialog.Rename(f) },
-                        onDelete = { dialog = BrowserDialog.Delete(f) },
+                        canCopy = current?.canCopy == true,
+                        busy = downloadJob != null || opLabel != null,
+                        onOpen = { path = full },
                         onDownload = { requestDownload(f) },
-                        downloadEnabled = downloadJob == null,
+                        onCopy = { clip = ClipItem(full, f, cut = false); info = null },
+                        onCut = { clip = ClipItem(full, f, cut = true); info = null },
+                        onMoveTo = { dialog = BrowserDialog.MoveTo(f) },
+                        onRename = { dialog = BrowserDialog.Rename(f) },
+                        onDetails = { dialog = BrowserDialog.Details(f) },
+                        onDelete = { dialog = BrowserDialog.Delete(f) },
                     )
                     if (idx < items.lastIndex) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 56.dp))
                 }
             }
         }
 
-        downloadTree?.let { tree ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Downloads go to: ${treeName(tree)}", Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { pickDownloadFolder.launch(null) }) { Text("Change") }
+        // ---- bottom: paste bar or "upload here" ----
+        val c = clip
+        if (c != null) {
+            PearlCard {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PIcon(if (c.cut) R.drawable.ic_cut else R.drawable.ic_copy, Pearl.Accent, 20.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(if (c.cut) "Move" else "Copy", style = MaterialTheme.typography.labelSmall, color = Pearl.Faint)
+                        Text(c.file.name, style = MaterialTheme.typography.titleSmall, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton(onClick = { clip = null }) { Text("Cancel", color = Pearl.Muted) }
+                    Button(
+                        onClick = ::paste,
+                        enabled = opLabel == null,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Pearl.Accent),
+                    ) { Text("Paste here", fontWeight = FontWeight.SemiBold) }
+                }
             }
+        } else {
+            PrimaryButton(pickLabel, R.drawable.ic_upload, { onPick(path) }, container = Pearl.Accent)
         }
-
-        PrimaryButton(pickLabel, R.drawable.ic_upload, { onPick(path) }, container = Pearl.Accent)
     }
 
+    // ---- dialogs ----
     when (val d = dialog) {
         null -> Unit
         BrowserDialog.NewFolder -> NameDialog("New folder", "", "Create", onDismiss = { dialog = null }) { name ->
             dialog = null
-            act { current!!.makeDir(joinPath(path, name)) }
+            act { it.makeDir(joinPath(path, name)) }
         }
         is BrowserDialog.Rename -> NameDialog("Rename", d.file.name, "Rename", onDismiss = { dialog = null }) { name ->
             dialog = null
-            act { current!!.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
+            act { it.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
         }
         is BrowserDialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
@@ -250,24 +386,91 @@ fun BrowserScreen(
             confirmButton = {
                 TextButton(onClick = {
                     dialog = null
-                    act { current!!.deletePath(joinPath(path, d.file.name), d.file.isDir) }
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    act { it.deletePath(joinPath(path, d.file.name), d.file.isDir) }
+                }) { Text("Delete", color = Pearl.Error) }
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
         )
+        is BrowserDialog.MoveTo -> MoveToDialog(
+            file = d.file,
+            from = path,
+            storages = storages,
+            onDismiss = { dialog = null },
+        ) { targetDir ->
+            dialog = null
+            val s = current ?: return@MoveToDialog
+            val src = joinPath(path, d.file.name)
+            val dest = joinPath(targetDir.trimEnd('/').ifEmpty { "/" }, d.file.name)
+            if (dest != src) runOp("Moving ${d.file.name}", "✅ Moved ${d.file.name} to $targetDir") { p -> s.move(src, dest, p) }
+        }
+        is BrowserDialog.Details -> DetailsDialog(d.file, joinPath(path, d.file.name), current, onDismiss = { dialog = null })
+    }
+}
+
+@Composable
+private fun StorageChip(st: Storage, selected: Boolean, space: Pair<Long, Long>?, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) Pearl.AccentSoft else Pearl.Card,
+        border = BorderStroke(1.dp, if (selected) Pearl.Accent else Pearl.Line),
+        modifier = Modifier.widthIn(min = 150.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PIcon(if (st.isUsb) R.drawable.ic_drive else R.drawable.ic_console,
+                if (selected) Pearl.Accent else Pearl.Muted, 22.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(st.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (selected) Pearl.Accent else Pearl.Ink)
+                if (space != null && space.first > 0) {
+                    Text("${formatBytes(space.second)} free", fontSize = 11.sp, color = Pearl.Muted)
+                    val used = 1f - space.second.toFloat() / space.first
+                    Box(Modifier.width(90.dp).height(4.dp).clip(RoundedCornerShape(50)).background(Pearl.Track)) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(used.coerceIn(0f, 1f))
+                            .background(if (used > 0.9f) Pearl.Error else Pearl.Accent))
+                    }
+                } else {
+                    Text(st.root, fontSize = 11.sp, color = Pearl.Muted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgressCard(label: String, done: Long, total: Long, onStop: () -> Unit) {
+    PearlCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (total > 0) "${formatBytes(done)} of ${formatBytes(total)}" else formatBytes(done),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = onStop) { Text("Stop", color = Pearl.Error) }
+            }
+            PearlProgress(if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null)
+        }
     }
 }
 
 @Composable
 private fun FileRow(
     f: RemoteFile,
+    canCopy: Boolean,
+    busy: Boolean,
     onOpen: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
     onDownload: () -> Unit,
-    downloadEnabled: Boolean,
+    onCopy: () -> Unit,
+    onCut: () -> Unit,
+    onMoveTo: () -> Unit,
+    onRename: () -> Unit,
+    onDetails: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    val homebrew = isHomebrew(f)
     Row(
         Modifier
             .fillMaxWidth()
@@ -278,30 +481,156 @@ private fun FileRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
-            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(if (f.isDir) Pearl.AccentSoft else Pearl.Bg),
+            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(
+                when {
+                    homebrew -> Pearl.OkSoft
+                    f.isDir -> Pearl.AccentSoft
+                    else -> Pearl.Bg
+                }
+            ),
             contentAlignment = Alignment.Center
         ) {
             PIcon(if (f.isDir) R.drawable.ic_folder else R.drawable.ic_file,
-                if (f.isDir) Pearl.Accent else Pearl.Muted, 16.dp)
+                when {
+                    homebrew -> Pearl.Ok
+                    f.isDir -> Pearl.Accent
+                    else -> Pearl.Muted
+                }, 16.dp)
         }
         Column(Modifier.weight(1f)) {
-            Text(f.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (!f.isDir) Text(formatBytes(f.size), style = MaterialTheme.typography.bodySmall)
+            Text(f.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (homebrew) Pearl.OkText else Pearl.Ink,
+                fontWeight = if (homebrew) FontWeight.SemiBold else FontWeight.Normal)
+            when {
+                homebrew -> Text("Homebrew apps", style = MaterialTheme.typography.bodySmall, color = Pearl.Ok)
+                !f.isDir -> Text(formatBytes(f.size), style = MaterialTheme.typography.bodySmall)
+            }
         }
         Box {
             IconButton(onClick = { menu = true }) { PIcon(R.drawable.ic_more, Pearl.Faint, 20.dp) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Pearl.Card) {
-                DropdownMenuItem(text = { Text("Download to phone") }, enabled = downloadEnabled,
-                    leadingIcon = { PIcon(R.drawable.ic_download, Pearl.Ink, 18.dp) },
-                    onClick = { menu = false; onDownload() })
-                DropdownMenuItem(text = { Text("Rename") },
-                    leadingIcon = { PIcon(R.drawable.ic_file, Pearl.Ink, 18.dp) },
-                    onClick = { menu = false; onRename() })
-                DropdownMenuItem(text = { Text("Delete", color = Pearl.Error) },
-                    leadingIcon = { PIcon(R.drawable.ic_close, Pearl.Error, 18.dp) },
-                    onClick = { menu = false; onDelete() })
+                val close = { menu = false }
+                MenuItem("Download to phone", R.drawable.ic_download, close, enabled = !busy, action = onDownload)
+                if (canCopy) MenuItem("Copy", R.drawable.ic_copy, close, action = onCopy)
+                MenuItem("Cut", R.drawable.ic_cut, close, action = onCut)
+                MenuItem("Move to…", R.drawable.ic_move, close, enabled = !busy, action = onMoveTo)
+                MenuItem("Rename", R.drawable.ic_edit, close, action = onRename)
+                MenuItem("Details", R.drawable.ic_info, close, action = onDetails)
+                HorizontalDivider(color = Pearl.Divider)
+                MenuItem("Delete", R.drawable.ic_close, close, danger = true, action = onDelete)
             }
         }
+    }
+}
+
+@Composable
+private fun MenuItem(
+    text: String,
+    icon: Int,
+    close: () -> Unit,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+    action: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(text, color = if (danger) Pearl.Error else Pearl.Ink) },
+        enabled = enabled,
+        leadingIcon = { PIcon(icon, if (danger) Pearl.Error else if (enabled) Pearl.Ink else Pearl.Faint, 18.dp) },
+        onClick = { close(); action() },
+    )
+}
+
+/** Move a file or folder to another folder (another drive too). */
+@Composable
+private fun MoveToDialog(
+    file: RemoteFile,
+    from: String,
+    storages: List<Storage>,
+    onDismiss: () -> Unit,
+    onMove: (String) -> Unit,
+) {
+    // suggest the other drive first
+    val other = storages.firstOrNull { !(from == it.root || from.startsWith(it.root + "/")) }
+    var target by remember { mutableStateOf(other?.root ?: from) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Pearl.Card,
+        title = { Text("Move ${file.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("To folder", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(target, { target = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (storages.map { it.label to it.root } + listOf("This folder" to from, "PS5 homebrew" to "/data/homebrew",
+                        "USB homebrew" to "/mnt/usb0/homebrew"))
+                        .distinctBy { it.second }
+                        .forEach { (label, root) ->
+                            FilterChip(selected = target == root, onClick = { target = root }, label = { Text(label) })
+                        }
+                }
+                Text("Moving to another drive copies everything, then removes the original.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = target.startsWith("/"), onClick = { onMove(target.trim()) }) {
+                Text("Move", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun DetailsDialog(file: RemoteFile, fullPath: String, fs: RemoteFs?, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var details by remember { mutableStateOf<RemoteDetails?>(null) }
+    var failed by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(fullPath) {
+        try {
+            details = fs?.details(fullPath, file.isDir)
+        } catch (e: Exception) {
+            failed = e.message
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Pearl.Card,
+        title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                DetailLine("Type", if (isHomebrew(file)) "Homebrew folder" else if (file.isDir) "Folder"
+                    else file.name.substringAfterLast('.', "").uppercase().ifEmpty { "File" } + " file")
+                DetailLine("Location", parentPath(fullPath))
+                val d = details
+                when {
+                    failed != null -> Text(failed!!, color = Pearl.Error, style = MaterialTheme.typography.bodySmall)
+                    d == null -> PearlProgress(null)
+                    else -> {
+                        DetailLine("Size", when {
+                            d.size < 0 -> "Unknown (needs PlayBeam Server)"
+                            else -> "${formatBytes(d.size)} (${"%,d".format(d.size)} bytes)"
+                        })
+                        if (d.isDir && d.size >= 0) DetailLine("Contains", "${d.files} files, ${d.dirs} folders")
+                        d.mtime?.let {
+                            val date = Date(it * 1000)
+                            DetailLine("Modified",
+                                "${DateFormat.getMediumDateFormat(ctx).format(date)} ${DateFormat.getTimeFormat(ctx).format(date)}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Column {
+        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Pearl.Faint)
+        Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -317,8 +646,8 @@ private fun NameDialog(
     val valid = text.isNotBlank() && '/' !in text
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
         containerColor = Pearl.Card,
+        title = { Text(title) },
         text = {
             OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") },
                 colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))

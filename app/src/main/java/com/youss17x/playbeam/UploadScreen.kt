@@ -27,7 +27,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
-private val PRESETS = listOf("/data/homebrew", "/data/etaHEN/games", "/mnt/usb0")
+/** Quick destinations: label to path. */
+private val PRESETS = listOf("PS5 · homebrew" to "/data/homebrew", "USB · homebrew" to "/mnt/usb0/homebrew")
 
 @Composable
 fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
@@ -36,6 +37,7 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
     val queue by UploadState.queue.collectAsState()
     var showConsole by remember { mutableStateOf(false) }
     var showDestination by remember { mutableStateOf(false) }
+    var showChooser by remember { mutableStateOf(false) }
     val currentConsole = state.currentConsole
 
     // is the PlayBeam Server payload running? (checked every few seconds)
@@ -59,7 +61,10 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
         if (action != null) i.action = action
     }
 
-    fun choose() = if (state.isTree) pickFolder.launch(null) else pickFiles.launch(arrayOf("*/*"))
+    fun pick(folder: Boolean) {
+        showChooser = false
+        if (folder) pickFolder.launch(null) else pickFiles.launch(arrayOf("*/*"))
+    }
 
     fun startUpload() {
         state.save()
@@ -110,37 +115,28 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
 
         ScreenTitle("Send to PS5")
 
-        // ---- Folder / Files ----
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Pearl.Track).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Segment("Folder", R.drawable.ic_folder, state.isTree, Modifier.weight(1f)) {
-                if (!state.isTree) { state.isTree = true; state.selected = emptyList() }
-                pickFolder.launch(null)
-            }
-            Segment("Files", R.drawable.ic_file, !state.isTree, Modifier.weight(1f)) {
-                if (state.isTree) { state.isTree = false; state.selected = emptyList() }
-                pickFiles.launch(arrayOf("*/*"))
-            }
-        }
-
         // ---- selection ----
         PearlCard(
             Modifier.shadow(16.dp, RoundedCornerShape(20.dp), ambientColor = Pearl.Ink.copy(alpha = 0.05f),
                 spotColor = Pearl.Ink.copy(alpha = 0.08f)),
-            onClick = { choose() }
+            onClick = { showChooser = true }
         ) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(
                     Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Pearl.AccentSoft),
                     contentAlignment = Alignment.Center
-                ) { PIcon(if (state.isTree) R.drawable.ic_folder else R.drawable.ic_file, Pearl.Accent, 26.dp) }
+                ) {
+                    PIcon(
+                        when {
+                            state.selected.isEmpty() -> R.drawable.ic_plus
+                            state.isTree -> R.drawable.ic_folder
+                            else -> R.drawable.ic_file
+                        }, Pearl.Accent, 26.dp)
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     val (title, sub) = when {
-                        state.selected.isEmpty() && state.isTree -> "Choose a folder" to "Everything inside, subfolders too"
-                        state.selected.isEmpty() -> "Choose files" to "One or several"
+                        state.selected.isEmpty() -> "Choose what to send" to "A folder or files from your phone"
                         state.isTree -> treeName(state.selected[0]) to "Folder ready to send"
                         state.selected.size == 1 -> (displayName(ctx, state.selected[0]) ?: "1 file") to "1 file ready to send"
                         else -> "${state.selected.size} files" to "Ready to send"
@@ -236,6 +232,7 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
     }
 
     if (showConsole) ConsoleSheet(state, onDismiss = { showConsole = false })
+    if (showChooser) ChooserSheet(onPick = ::pick, onDismiss = { showChooser = false })
     if (showDestination) {
         DestinationSheet(
             state,
@@ -245,22 +242,37 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
     }
 }
 
+/** Bottom sheet: send a folder or files. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Segment(text: String, icon: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Row(
-        modifier
-            .height(44.dp)
-            .then(if (selected) Modifier.shadow(2.dp, RoundedCornerShape(12.dp)) else Modifier)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) Pearl.Card else Color.Transparent)
-            .clickable(onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        PIcon(icon, if (selected) Pearl.Ink else Pearl.Muted, 18.dp)
-        Spacer(Modifier.width(8.dp))
-        Text(text, color = if (selected) Pearl.Ink else Pearl.Muted, fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+private fun ChooserSheet(onPick: (folder: Boolean) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Pearl.Bg) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("What do you want to send?", style = MaterialTheme.typography.headlineSmall)
+            ChooserOption(R.drawable.ic_folder, "A folder", "Everything inside, subfolders too") { onPick(true) }
+            ChooserOption(R.drawable.ic_file, "Files", "Pick one or several files") { onPick(false) }
+        }
+    }
+}
+
+@Composable
+private fun ChooserOption(icon: Int, title: String, subtitle: String, onClick: () -> Unit) {
+    PearlCard(onClick = onClick) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Pearl.AccentSoft),
+                contentAlignment = Alignment.Center
+            ) { PIcon(icon, Pearl.Accent, 24.dp) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall)
+            }
+            PIcon(R.drawable.ic_chevron_right, Pearl.Faint, 16.dp)
+        }
     }
 }
 
@@ -279,10 +291,11 @@ private fun DestinationSheet(state: AppState, onBrowse: () -> Unit, onDismiss: (
                 colors = pearlFieldColors())
             SectionLabel("Quick picks")
             PearlCard {
-                PRESETS.forEachIndexed { idx, p ->
-                    SettingsRow(p, divider = idx < PRESETS.lastIndex, onClick = { state.remote = p },
+                PRESETS.forEachIndexed { idx, (label, p) ->
+                    SettingsRow(label, divider = idx < PRESETS.lastIndex, onClick = { state.remote = p },
+                        subtitle = p,
                         trailing = {
-                            if (state.remote == p) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
+                            if (state.remote == p) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Ok))
                         })
                 }
             }

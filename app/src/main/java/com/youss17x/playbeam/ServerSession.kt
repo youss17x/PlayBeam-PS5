@@ -14,6 +14,17 @@ import java.io.IOException
 /** The PS5 file browser over the PlayBeam Server payload. One call at a time, on the IO thread. */
 class ServerSession(private val host: String) : RemoteFs {
     override val via = "PlayBeam Server"
+    override val canCopy = true
+
+    override suspend fun copy(from: String, to: String, onProgress: (Long, Long) -> Unit) =
+        io { it.copy(from, to, move = false, onProgress = onProgress) }
+
+    override suspend fun move(from: String, to: String, onProgress: (Long, Long) -> Unit) =
+        io { it.copy(from, to, move = true, onProgress = onProgress) }
+
+    override suspend fun details(path: String, isDir: Boolean) = io { it.stat(path) }
+
+    override suspend fun freeSpace(path: String): Pair<Long, Long>? = runCatching { io { it.df(path) } }.getOrNull()
 
     private val mutex = Mutex()
     private var client: ServerClient? = null

@@ -17,6 +17,10 @@
      LIST <dir>                    -> one line per entry "D <size> <name>" or "F <size> <name>",
                                       then OK <count> | ERR <reason>
      GET <path>                    -> OK <size>, then <size> raw bytes | ERR <reason>
+     STAT <path>                   -> OK F <size> <mtime> | OK D <total size> <mtime> <files> <folders>
+     DF <path>                     -> OK <total bytes> <free bytes>
+     COPY <from>\t<to>             -> PROG <done> <total> lines, then OK | ERR   (file or folder)
+     MOVE <from>\t<to>             -> like COPY; a plain rename when on the same drive
      QUIT                          -> closes this connection
      SHUTDOWN                      -> OK, then the server exits
 
@@ -37,13 +41,14 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "miniz.h"
 
-#define SERVER_VERSION "1.1"
+#define SERVER_VERSION "1.2"
 #define SERVER_PORT 9113
 #define LINE_MAX_LEN 4096
 #define IO_BUF_SIZE (4 * 1024 * 1024)
@@ -325,6 +330,163 @@ static void cmd_rename(conn_t *c, char *args) {
   else send_line(c, "OK");
 }
 
+/* ---------------------------------------------------------------- copy / move / stat */
+
+typedef struct tree_info {
+  unsigned long long bytes;
+  unsigned long files;
+  unsigned long dirs;
+} tree_info_t;
+
+static void tree_measure(const char *path, tree_info_t *t) {
+  struct stat st;
+  if (lstat(path, &st) != 0) return;
+  if (!S_ISDIR(st.st_mode)) {
+    t->bytes += (unsigned long long)st.st_size;
+    t->files++;
+    return;
+  }
+  t->dirs++;
+  DIR *d = opendir(path);
+  if (!d) return;
+  char full[LINE_MAX_LEN];
+  struct dirent *e;
+  while ((e = readdir(d)) != NULL) {
+    if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+    join_path(full, sizeof full, path, e->d_name);
+    tree_measure(full, t);
+  }
+  closedir(d);
+}
+
+static void cmd_stat(conn_t *c, const char *path) {
+  struct stat st;
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (stat(path, &st) != 0) { send_line(c, "ERR %s", strerror(errno)); return; }
+  if (!S_ISDIR(st.st_mode)) {
+    send_line(c, "OK F %lld %lld", (long long)st.st_size, (long long)st.st_mtime);
+    return;
+  }
+  tree_info_t t = {0};
+  tree_measure(path, &t);
+  send_line(c, "OK D %llu %lld %lu %lu", t.bytes, (long long)st.st_mtime, t.files,
+            t.dirs > 0 ? t.dirs - 1 : 0);
+}
+
+static void cmd_df(conn_t *c, const char *path) {
+  struct statvfs v;
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (statvfs(path, &v) != 0) { send_line(c, "ERR %s", strerror(errno)); return; }
+  unsigned long long unit = v.f_frsize ? v.f_frsize : v.f_bsize;
+  send_line(c, "OK %llu %llu", (unsigned long long)v.f_blocks * unit, (unsigned long long)v.f_bavail * unit);
+}
+
+typedef struct copy_ctx {
+  conn_t *c;
+  unsigned long long done;
+  unsigned long long total;
+  time_t last_report;
+} copy_ctx_t;
+
+static void copy_report(copy_ctx_t *k, int force) {
+  time_t now = time(NULL);
+  if (force || now != k->last_report) {
+    k->last_report = now;
+    send_line(k->c, "PROG %llu %llu", k->done, k->total);
+  }
+}
+
+static int copy_file(copy_ctx_t *k, const char *src, const char *dst, mode_t mode) {
+  int in = open(src, O_RDONLY);
+  if (in < 0) return -1;
+  int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, mode ? mode : 0777);
+  if (out < 0) { int e = errno; close(in); errno = e; return -1; }
+  int rc = 0;
+  for (;;) {
+    ssize_t n = read(in, k->c->io, IO_BUF_SIZE);
+    if (n == 0) break;
+    if (n < 0) { if (errno == EINTR) continue; rc = -1; break; }
+    if (write_all(out, k->c->io, (size_t)n) != 0) { rc = -1; break; }
+    k->done += (unsigned long long)n;
+    copy_report(k, 0);
+  }
+  int e = errno;
+  close(in);
+  if (close(out) != 0 && rc == 0) { rc = -1; e = errno; }
+  errno = e;
+  return rc;
+}
+
+static int copy_tree(copy_ctx_t *k, const char *src, const char *dst) {
+  struct stat st;
+  if (lstat(src, &st) != 0) return -1;
+  if (!S_ISDIR(st.st_mode)) return copy_file(k, src, dst, st.st_mode & 0777);
+
+  if (mkdir(dst, 0777) != 0 && errno != EEXIST) return -1;
+  DIR *d = opendir(src);
+  if (!d) return -1;
+  char s2[LINE_MAX_LEN], d2[LINE_MAX_LEN];
+  struct dirent *e;
+  int rc = 0;
+  while ((e = readdir(d)) != NULL) {
+    if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+    join_path(s2, sizeof s2, src, e->d_name);
+    join_path(d2, sizeof d2, dst, e->d_name);
+    if (copy_tree(k, s2, d2) != 0) { rc = -1; break; }
+  }
+  int err = errno;
+  closedir(d);
+  errno = err;
+  return rc;
+}
+
+/* Splits "<from>\t<to>" and checks both; the destination must not exist yet
+   and a folder can't go inside itself. Returns 0 if fine (reply already sent otherwise). */
+static int two_paths(conn_t *c, char *args, char **from, char **to) {
+  char *tab = strchr(args, '\t');
+  if (!tab) { send_line(c, "ERR usage: <from><TAB><to>"); return -1; }
+  *tab = '\0';
+  *from = args;
+  *to = tab + 1;
+  if (!valid_path(*from) || !valid_path(*to)) { send_line(c, "ERR bad path"); return -1; }
+  struct stat st;
+  if (lstat(*from, &st) != 0) { send_line(c, "ERR %s", strerror(errno)); return -1; }
+  if (lstat(*to, &st) == 0) { send_line(c, "ERR already exists"); return -1; }
+  size_t fl = strlen(*from);
+  if (strncmp(*to, *from, fl) == 0 && ((*to)[fl] == '/' || (*to)[fl] == '\0')) {
+    send_line(c, "ERR can't put a folder inside itself");
+    return -1;
+  }
+  if (make_dirs(*to, 1) != 0) { send_line(c, "ERR mkdir: %s", strerror(errno)); return -1; }
+  return 0;
+}
+
+static void cmd_copy(conn_t *c, char *args, int move) {
+  char *from, *to;
+  if (two_paths(c, args, &from, &to) != 0) return;
+
+  if (move && rename(from, to) == 0) { send_line(c, "OK"); return; }
+  if (move && errno != EXDEV) { send_line(c, "ERR %s", strerror(errno)); return; }
+
+  /* copy (or move across drives: copy, then remove the original) */
+  tree_info_t t = {0};
+  tree_measure(from, &t);
+  copy_ctx_t k = { .c = c, .total = t.bytes };
+  copy_report(&k, 1);
+  if (copy_tree(&k, from, to) != 0) {
+    int e = errno;
+    remove_tree(to); /* don't leave a half copy behind */
+    send_line(c, "ERR %s", strerror(e));
+    return;
+  }
+  copy_report(&k, 1);
+  if (move && remove_tree(from) != 0) {
+    send_line(c, "ERR copied, but couldn't remove the original: %s", strerror(errno));
+    return;
+  }
+  send_line(c, "OK");
+}
+
 typedef struct unzip_ctx {
   conn_t *c;
   int fd;
@@ -461,6 +623,14 @@ static void *client_thread(void *arg) {
       cmd_list(c, line + 5);
     } else if (strncmp(line, "GET ", 4) == 0) {
       if (cmd_get(c, line + 4) != 0) break;
+    } else if (strncmp(line, "STAT ", 5) == 0) {
+      cmd_stat(c, line + 5);
+    } else if (strncmp(line, "DF ", 3) == 0) {
+      cmd_df(c, line + 3);
+    } else if (strncmp(line, "COPY ", 5) == 0) {
+      cmd_copy(c, line + 5, 0);
+    } else if (strncmp(line, "MOVE ", 5) == 0) {
+      cmd_copy(c, line + 5, 1);
     } else if (strcmp(line, "QUIT") == 0) {
       break;
     } else if (strcmp(line, "SHUTDOWN") == 0) {
