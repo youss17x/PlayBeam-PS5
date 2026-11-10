@@ -13,7 +13,7 @@ An Android app to send files and folders from your phone to your PS5 over Wi-Fi.
 
 Five tabs: **Upload · Files · Payload · History · Settings**.
 
-Languages: **English**, **Français**, **العربية** (right-to-left) — Settings → Language.
+Languages: **English**, **Français**, **Arabic**  — Settings → Language.
 Themes: **System**, **Light**, **Dark** — Settings → Appearance.
 Updates: the app checks GitHub Releases and offers to install new versions.
 
