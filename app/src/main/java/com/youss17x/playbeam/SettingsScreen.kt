@@ -49,6 +49,11 @@ fun SettingsScreen(state: AppState) {
         SectionLabel("PS5")
         ConsoleEditor(state)
 
+        // ---- PlayBeam Server ----
+        Spacer(Modifier.height(4.dp))
+        SectionLabel("PlayBeam Server")
+        ServerCard(state)
+
         // ---- transfers ----
         Spacer(Modifier.height(4.dp))
         SectionLabel("Transfers")

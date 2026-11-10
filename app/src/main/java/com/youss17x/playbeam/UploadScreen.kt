@@ -160,8 +160,8 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
                 onClick = { showConsole = true })
             SettingsRow("Destination", state.remote.ifBlank { "/" }, onClick = { showDestination = true })
             SettingsRow("Transfer", if (serverUp) "PlayBeam Server" else "FTP",
-                onClick = if (serverUp) null else ({ goTo(Tab.Payload) }),
-                subtitle = if (serverUp) "Fastest — server running on the PS5" else "Tap to start PlayBeam Server for faster uploads")
+                onClick = { goTo(Tab.Settings) },
+                subtitle = if (serverUp) "Fastest — server running on the PS5" else "Start PlayBeam Server in Settings for faster uploads")
             val options = listOfNotNull(
                 if (state.resume) "Resume" else null,
                 "${state.connections} conn.",
