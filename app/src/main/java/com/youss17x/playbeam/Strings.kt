@@ -232,6 +232,9 @@ abstract class Strings {
     abstract val scanning: String
     abstract fun connectingTo(host: String): String
     abstract fun nWaiting(n: Int): String
+    abstract fun splitPieces(n: Int): String
+    abstract fun splitNotOnDrive(fs: String): String
+    abstract val splitServerOld: String
     abstract val zipsNotExtracted: String
     abstract fun extractingPct(name: String, i: Int, n: Int, pct: Int): String
     abstract fun extracting(name: String): String
@@ -473,6 +476,9 @@ object En : Strings() {
     override val scanning = "Scanning files…"
     override fun connectingTo(host: String) = "Connecting to $host…"
     override fun nWaiting(n: Int) = " • $n waiting"
+    override fun splitPieces(n: Int) = "Big file: sending $n pieces at once"
+    override fun splitNotOnDrive(fs: String) = "Big file: one piece at a time on this drive ($fs)"
+    override val splitServerOld = "Big file: one piece — restart PlayBeam Server (Payload tab) to split it"
     override val zipsNotExtracted = " — ZIPs not extracted (start PlayBeam Server for that)"
     override fun extractingPct(name: String, i: Int, n: Int, pct: Int) = "Extracting $name ($i/$n) — $pct%"
     override fun extracting(name: String) = "Extracting $name"
@@ -711,6 +717,9 @@ object Fr : Strings() {
     override val scanning = "Analyse des fichiers…"
     override fun connectingTo(host: String) = "Connexion à $host…"
     override fun nWaiting(n: Int) = " • $n en attente"
+    override fun splitPieces(n: Int) = "Gros fichier : envoi en $n morceaux à la fois"
+    override fun splitNotOnDrive(fs: String) = "Gros fichier : un seul morceau sur ce disque ($fs)"
+    override val splitServerOld = "Gros fichier : un seul morceau — relancez PlayBeam Server (onglet Payload) pour le découper"
     override val zipsNotExtracted = " — ZIP non décompressés (lancez PlayBeam Server pour cela)"
     override fun extractingPct(name: String, i: Int, n: Int, pct: Int) = "Décompression de $name ($i/$n) — $pct %"
     override fun extracting(name: String) = "Décompression de $name"
@@ -954,6 +963,9 @@ object Ar : Strings() {
     override val scanning = "جارٍ فحص الملفات…"
     override fun connectingTo(host: String) = "جارٍ الاتصال بـ $host…"
     override fun nWaiting(n: Int) = " • $n في الانتظار"
+    override fun splitPieces(n: Int) = "ملف كبير: يُرسل على $n أجزاء في نفس الوقت"
+    override fun splitNotOnDrive(fs: String) = "ملف كبير: جزء واحد على هذا القرص ($fs)"
+    override val splitServerOld = "ملف كبير: جزء واحد — أعد تشغيل PlayBeam Server (تبويب Payload) لتقسيمه"
     override val zipsNotExtracted = " — لم يُفك ضغط ZIP (شغّل PlayBeam Server لذلك)"
     override fun extractingPct(name: String, i: Int, n: Int, pct: Int) = "جارٍ فك ضغط $name ($i/$n) — $pct%"
     override fun extracting(name: String) = "جارٍ فك ضغط $name"

@@ -10,7 +10,7 @@
                                       then OK | ERR <reason>
                                       offset 0 creates/truncates, offset > 0 continues a file
      CREATE <size> <path>          -> creates an empty file for a split upload:
-                                      OK SPARSE (pieces may be written in parallel) | OK
+                                      OK SPARSE <fs> (pieces may be written in parallel) | OK <fs>
      PUTR <offset> <length> <path> -> like PUT but never truncates (one piece of a split upload)
      UNZIP <zip>\t<dest dir>       -> PROG <done> <total> lines while extracting,
                                       then OK <files> | ERR <reason>
@@ -220,14 +220,16 @@ static void cmd_rm(conn_t *c, const char *path) {
 
 /* True when pieces of a file can be written at any offset cheaply (UFS, the PS5's internal
    drive). exFAT / FAT USB drives would fill the gaps with zeros, so uploads stay in order there. */
-static int sparse_ok(const char *path) {
+static int sparse_ok(const char *path, char *fs, size_t fslen) {
+  snprintf(fs, fslen, "unknown");
 #ifdef __FreeBSD__
   struct statfs st;
   if (statfs(path, &st) != 0) return 0;
-  return strcmp(st.f_fstypename, "ufs") == 0 || strcmp(st.f_fstypename, "tmpfs") == 0 ||
-         strcmp(st.f_fstypename, "zfs") == 0;
+  snprintf(fs, fslen, "%s", st.f_fstypename);
+  return strstr(fs, "fat") == NULL && strstr(fs, "msdos") == NULL;
 #else
   (void)path;
+  snprintf(fs, fslen, "native");
   return 1;
 #endif
 }
@@ -241,10 +243,11 @@ static void cmd_create(conn_t *c, char *args) {
   if (make_dirs(path, 1) != 0) { send_line(c, "ERR mkdir: %s", strerror(errno)); return; }
   int f = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
   if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return; }
-  int sparse = sparse_ok(path);
+  char fs[32];
+  int sparse = sparse_ok(path, fs, sizeof fs);
   if (sparse && size > 0 && ftruncate(f, (off_t)size) != 0) sparse = 0;
   close(f);
-  send_line(c, sparse ? "OK SPARSE" : "OK");
+  send_line(c, sparse ? "OK SPARSE %s" : "OK %s", fs);
 }
 
 /* Returns -1 if the connection broke (caller must close it). */

@@ -73,15 +73,19 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     fun rm(path: String) { command("RM $path") }
 
     /**
-     * Creates an empty [size]-byte file for a split upload. Returns true if pieces can be written
-     * in parallel, false if not (the file still exists), or null if the server is too old (< 1.4).
+     * Creates an empty [size]-byte file for a split upload. Returns whether pieces can be written
+     * in parallel plus the drive's file system, or null if the server is too old (< 1.4).
      */
-    fun create(path: String, size: Long): Boolean? {
+    fun create(path: String, size: Long): CreateResult? {
         send("CREATE $size $path")
         val reply = readLine()
         if (reply == "ERR unknown command") return null
-        return ok(reply).trim() == "OK SPARSE"
+        val parts = ok(reply).split(' ')
+        val sparse = parts.getOrNull(1) == "SPARSE"
+        return CreateResult(sparse, parts.getOrNull(if (sparse) 2 else 1) ?: "")
     }
+
+    class CreateResult(val parallel: Boolean, val fileSystem: String)
 
     fun shutdownServer() { command("SHUTDOWN") }
 
@@ -309,22 +313,28 @@ class ServerUploader(
         val remote = remotePath(e)
         val temp = "$remote.pbpart"
         var split = false
+        var note: String? = null
         Worker().use { ctl ->
             ctl.retry(cb) { c ->
+                split = false
+                note = null
                 val existing = if (resume) c.size(remote) else -1
-                split = existing <= 0 && when (c.create(temp, e.size)) {
-                    true -> true
-                    false -> { runCatching { c.rm(temp) }; false }
-                    null -> false
+                if (existing > 0) return@retry // already there, or continue it in one piece
+                val r = c.create(temp, e.size)
+                when {
+                    r == null -> note = S.splitServerOld
+                    r.parallel -> split = true
+                    else -> { runCatching { c.rm(temp) }; note = S.splitNotOnDrive(r.fileSystem) }
                 }
             }
             if (!split) {
-                ctl.uploadFile(e, resume, cb, ByteArray(1 shl 20))
+                ctl.uploadFile(e, resume, cb, ByteArray(1 shl 20), note)
                 return@coroutineScope
             }
         }
 
         cb.onFileStart(e)
+        cb.onStatus(S.splitPieces(wanted))
         try {
             val piece = ((e.size / wanted) + PIECE_ALIGN - 1) / PIECE_ALIGN * PIECE_ALIGN
             (0 until wanted).map { i ->
@@ -387,10 +397,11 @@ class ServerUploader(
             }
         }
 
-        suspend fun uploadFile(e: Entry, resume: Boolean, cb: UploadCallbacks, buf: ByteArray) = coroutineScope {
+        suspend fun uploadFile(e: Entry, resume: Boolean, cb: UploadCallbacks, buf: ByteArray, note: String? = null) = coroutineScope {
             currentCoroutineContext().ensureActive()
             val remote = remotePath(e)
             cb.onFileStart(e)
+            if (note != null) cb.onStatus(note)
             var reported = 0L
             var finished = false
             // closes the socket if the upload is stopped while blocked on the network
