@@ -2,6 +2,9 @@ package com.youss17x.playbeam
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -154,6 +157,7 @@ fun SettingsScreen(state: AppState) {
 @Composable
 private fun AboutCard(version: String) {
     val ctx = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
     PearlCard {
@@ -177,6 +181,11 @@ private fun AboutCard(version: String) {
                 Links.all.filter { it.second.isNotBlank() }.forEach { (label, url) ->
                     SecondaryButton(label, R.drawable.ic_link, { open(url) })
                 }
+                // Discord has no public profile link by username: copy it instead
+                SecondaryButton("Discord", R.drawable.ic_copy, {
+                    clipboard.setText(AnnotatedString(Links.DISCORD_USER))
+                    Toast.makeText(ctx, S.discordCopied(Links.DISCORD_USER), Toast.LENGTH_SHORT).show()
+                })
             }
             Text(S.madeBy, style = MaterialTheme.typography.bodySmall)
         }
@@ -186,9 +195,9 @@ private fun AboutCard(version: String) {
 /** The author's pages. Leave a link empty to hide its button. */
 object Links {
     const val GITHUB = "https://github.com/youss17x"
-    const val X = ""
-    const val DISCORD = ""
-    const val FACEBOOK = ""
+    const val X = "https://x.com/frank_casle"
+    const val FACEBOOK = "https://www.facebook.com/share/1c4Xf3d7oG/"
+    const val DISCORD_USER = "youssriaal"
 
-    val all = listOf("GitHub" to GITHUB, "X" to X, "Discord" to DISCORD, "Facebook" to FACEBOOK)
+    val all = listOf("GitHub" to GITHUB, "X" to X, "Facebook" to FACEBOOK)
 }

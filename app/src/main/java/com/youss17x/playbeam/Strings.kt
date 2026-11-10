@@ -281,6 +281,7 @@ abstract class Strings {
     abstract val appTagline: String
     abstract val openSource: String
     abstract val madeBy: String
+    abstract fun discordCopied(user: String): String
 
     // errors
     abstract val notOnWifi: String
@@ -519,6 +520,7 @@ object En : Strings() {
     override val openSource = "Open source"
     override val madeBy = "Made by youss17x"
 
+    override fun discordCopied(user: String) = "Discord username “$user” copied"
     override val notOnWifi = "Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5."
     override val serverErrorGeneric = "PlayBeam Server error"
     override fun cantReach(host: String) = "Can't reach the PS5 at $host. Is it on, and is PlayBeam Server (or FTP) running?"
@@ -755,6 +757,7 @@ object Fr : Strings() {
     override val openSource = "Open source"
     override val madeBy = "Créé par youss17x"
 
+    override fun discordCopied(user: String) = "Pseudo Discord « $user » copié"
     override val notOnWifi = "Votre téléphone n'est pas en Wi-Fi. Connectez-le au même Wi-Fi que la PS5."
     override val serverErrorGeneric = "Erreur de PlayBeam Server"
     override fun cantReach(host: String) = "Impossible de joindre la PS5 à $host. Est-elle allumée, avec PlayBeam Server (ou FTP) lancé ?"
@@ -996,6 +999,7 @@ object Ar : Strings() {
     override val openSource = "مفتوح المصدر"
     override val madeBy = "من تطوير youss17x"
 
+    override fun discordCopied(user: String) = "تم نسخ اسم Discord «$user»"
     override val notOnWifi = "هاتفك غير متصل بالواي فاي. صِله بنفس شبكة الواي فاي التي عليها PS5."
     override val serverErrorGeneric = "خطأ في PlayBeam Server"
     override fun cantReach(host: String) = "تعذّر الوصول إلى PS5 على $host. هل الجهاز يعمل، وهل PlayBeam Server (أو FTP) مشغّل؟"
