@@ -1,4 +1,4 @@
-# PlayBeam
+# PlayBeam PS5
 
 An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
 
@@ -65,6 +65,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `ConsoleEditor.kt` | Choosing the PS5 (saved consoles, Find my PS5, IP) |
 | `Updater.kt`, `UpdateDialog.kt` | Update check on GitHub Releases, download and install |
 | `Ps5InfoCard.kt` | PS5 model, firmware, live sensors and storage |
+| `Splash.kt` | Opening animation “PlayBeam — Has No Limits” |
 | `Strings.kt` | All texts in English, French and Arabic |
 | `Ui.kt` | Pearl theme (colors, type) and shared UI building blocks |
 | `BrowserScreen.kt` | PS5 file browser (incl. download to phone) |

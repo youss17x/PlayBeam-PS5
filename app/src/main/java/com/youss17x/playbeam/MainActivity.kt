@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.IntentCompat
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -31,16 +33,20 @@ class MainActivity : ComponentActivity() {
         I18n.load(this)
         Pearl.load(this)
         applySystemBars(Pearl.isDark)
-        if (savedInstanceState == null) handleShareIntent(intent)
+        val firstStart = savedInstanceState == null
+        if (firstStart) handleShareIntent(intent)
         setContent {
-            // status / navigation bar icons follow the theme
-            LaunchedEffect(Pearl.isDark) { applySystemBars(Pearl.isDark) }
+            // opening animation only when the app starts (not after rotating or changing theme)
+            var splash by rememberSaveable { mutableStateOf(firstStart) }
+            // status / navigation bar icons follow the theme (the opening animation is light)
+            LaunchedEffect(Pearl.isDark, splash) { applySystemBars(Pearl.isDark && !splash) }
             // Arabic is shown right-to-left
             val dir = if (I18n.lang.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
             CompositionLocalProvider(LocalLayoutDirection provides dir) {
                 PearlTheme {
                     Surface(Modifier.fillMaxSize(), color = Pearl.Bg) {
                         App(sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
+                        if (splash) Splash(onFinished = { splash = false })
                     }
                 }
             }
@@ -138,6 +144,7 @@ fun App(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
     var update by remember { mutableStateOf<AppRelease?>(null) }
     LaunchedEffect(Unit) {
         if (Store.prefs(ctx).getBoolean("autoUpdate", true)) {
+            delay(3_000) // after the opening animation
             update = runCatching { Updater.available(ctx) }.getOrNull()
         }
     }
