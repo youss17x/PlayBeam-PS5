@@ -206,7 +206,7 @@ class UploadService : Service() {
             message = "⏹ Upload stopped"
         } catch (e: Exception) {
             // a socket closed by Stop shows up as an IOException
-            message = if (!currentCoroutineContext().isActive) "⏹ Upload stopped" else "❌ Error: ${e.message}"
+            message = if (!currentCoroutineContext().isActive) "⏹ Upload stopped" else "❌ ${friendlyError(this, job.host, e)}"
         }
 
         val duration = SystemClock.elapsedRealtime() - startTime

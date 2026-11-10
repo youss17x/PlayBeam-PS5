@@ -2,6 +2,7 @@ package com.youss17x.playbeam
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,6 +26,23 @@ data class FoundDevice(val host: String, val ftpPort: Int?, val banner: String, 
  * and FTP servers (etaHEN / FTP payloads) on the usual ports.
  * Scans every address of the phone's /24 subnet.
  */
+/** True when the phone is on Wi-Fi (or Ethernet), i.e. it can reach the PS5 on the home network. */
+fun onLocalNetwork(context: Context): Boolean {
+    val cm = context.getSystemService(ConnectivityManager::class.java)
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+}
+
+/** A clear message for network errors instead of the raw Java one. */
+fun friendlyError(context: Context, host: String, e: Throwable): String = when {
+    !onLocalNetwork(context) -> "Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5."
+    e is ServerError -> e.message ?: "PlayBeam Server error"
+    e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException ->
+        "Can't reach the PS5 at $host. Is it on, and is PlayBeam Server (or FTP) running?"
+    else -> e.message ?: "Something went wrong"
+}
+
 object PS5Discovery {
 
     /** Most likely PS5 FTP ports first. */
@@ -40,6 +58,7 @@ object PS5Discovery {
     }
 
     suspend fun scan(context: Context, onProgress: (Float) -> Unit): List<FoundDevice> = coroutineScope {
+        if (!onLocalNetwork(context)) throw IOException("Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5.")
         val ip = localIpv4(context) ?: throw IOException("Not connected to Wi-Fi")
         val base = ip.substringBeforeLast('.')
         val own = ip.substringAfterLast('.').toInt()

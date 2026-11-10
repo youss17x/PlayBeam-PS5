@@ -509,12 +509,14 @@ private fun ConsoleSheet(
             }
 
             SectionLabel("Manual")
+            Text("PlayBeam Server always uses port $SERVER_PORT automatically. The port below is only for FTP (usually 2121).",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(state.host, { state.host = it }, label = { Text("PS5 IP") },
                     singleLine = true, modifier = Modifier.weight(2f), shape = RoundedCornerShape(14.dp),
                     colors = pearlFieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                OutlinedTextField(state.port, { state.port = it.filter(Char::isDigit) }, label = { Text("Port") },
+                OutlinedTextField(state.port, { state.port = it.filter(Char::isDigit) }, label = { Text("FTP port") },
                     singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
                     colors = pearlFieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))

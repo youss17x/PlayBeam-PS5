@@ -6,6 +6,7 @@ A small PS5 payload that receives files from the PlayBeam Android app.
 - Several connections at once (one thread each) for fast uploads
 - Resume support (continue a file from an offset)
 - Extracts `.zip` files directly on the PS5 (ZIP64 supported, via [miniz](https://github.com/richgel999/miniz), MIT — see `miniz-LICENSE`)
+- Lists, downloads, renames and deletes files (used by the app's PS5 file browser)
 - Shows PS5 notifications when it starts and when a ZIP is extracted
 
 ## Start it
@@ -31,5 +32,9 @@ One command per line (`\n`), paths are absolute and take the rest of the line:
 | `PUT <offset> <length> <path>` | `READY`, then send the bytes, then `OK` / `ERR` |
 | `UNZIP <zip>⇥<dest>` | `PROG <done> <total>` lines, then `OK <files>` / `ERR` |
 | `RM <path>` | `OK` / `ERR` |
+| `RMTREE <path>` | `OK` / `ERR` (folder and its content) |
+| `RENAME <from>⇥<to>` | `OK` / `ERR` |
+| `LIST <dir>` | `D <size> <name>` / `F <size> <name>` lines, then `OK <count>` |
+| `GET <path>` | `OK <size>` then the bytes / `ERR` |
 | `QUIT` | closes the connection |
 | `SHUTDOWN` | `OK`, then the server exits |

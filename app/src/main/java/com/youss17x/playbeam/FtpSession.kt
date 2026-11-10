@@ -23,8 +23,36 @@ data class RemoteFile(val name: String, val isDir: Boolean, val size: Long)
 fun joinPath(dir: String, name: String) = if (dir.endsWith("/")) dir + name else "$dir/$name"
 fun parentPath(path: String) = path.trimEnd('/').substringBeforeLast('/').ifEmpty { "/" }
 
+/** What the PS5 file browser needs: implemented over FTP and over PlayBeam Server. */
+interface RemoteFs {
+    /** Shown in the browser, e.g. "PlayBeam Server" or "FTP". */
+    val via: String
+    suspend fun list(path: String): List<RemoteFile>
+    suspend fun makeDir(path: String)
+    suspend fun renamePath(from: String, to: String)
+    suspend fun deletePath(path: String, isDir: Boolean)
+    suspend fun download(ctx: Context, remotePath: String, isDir: Boolean, treeUri: Uri, onBytes: (String, Long) -> Unit)
+    fun closeAsync()
+}
+
+/** Creates a file in a phone folder (SAF document), guessing its type from the name. */
+internal fun createPhoneFile(ctx: Context, parentDoc: Uri, name: String): Uri {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+    return DocumentsContract.createDocument(ctx.contentResolver, parentDoc, mime, name)
+        ?: throw IOException("Can't create $name on the phone")
+}
+
+internal fun createPhoneDir(ctx: Context, parentDoc: Uri, name: String): Uri =
+    DocumentsContract.createDocument(ctx.contentResolver, parentDoc, DocumentsContract.Document.MIME_TYPE_DIR, name)
+        ?: throw IOException("Can't create folder $name on the phone")
+
+internal fun treeRoot(treeUri: Uri): Uri =
+    DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+
 /** One FTP connection used by the PS5 file browser. All calls run on the IO thread, one at a time. */
-class FtpSession(private val host: String, private val port: Int) {
+class FtpSession(private val host: String, private val port: Int) : RemoteFs {
+    override val via = "FTP"
     private val ftp = FTPClient()
     private val mutex = Mutex()
 
@@ -43,7 +71,7 @@ class FtpSession(private val host: String, private val port: Int) {
         }
     }
 
-    suspend fun list(path: String): List<RemoteFile> = io {
+    override suspend fun list(path: String): List<RemoteFile> = io {
         var files: List<FTPFile> = listFiles(path).filterNotNull()
         if (!FTPReply.isPositiveCompletion(replyCode)) {
             throw IOException("Can't open $path: ${replyString.trim()}")
@@ -57,15 +85,15 @@ class FtpSession(private val host: String, private val port: Int) {
             .sortedWith(compareBy({ !it.isDir }, { it.name.lowercase() }))
     }
 
-    suspend fun makeDir(path: String) = io {
+    override suspend fun makeDir(path: String) = io {
         if (!makeDirectory(path)) throw IOException("Can't create folder: ${replyString.trim()}")
     }
 
-    suspend fun renamePath(from: String, to: String) = io {
+    override suspend fun renamePath(from: String, to: String) = io {
         if (!this.rename(from, to)) throw IOException("Can't rename: ${replyString.trim()}")
     }
 
-    suspend fun deletePath(path: String, isDir: Boolean) = io {
+    override suspend fun deletePath(path: String, isDir: Boolean) = io {
         if (isDir) deleteTree(path)
         else if (!deleteFile(path)) throw IOException("Can't delete: ${replyString.trim()}")
     }
@@ -85,7 +113,7 @@ class FtpSession(private val host: String, private val port: Int) {
      * Copies a PS5 file or folder (recursively) into the phone folder [treeUri]
      * (picked with OpenDocumentTree). [onBytes] is called with the file name and bytes received.
      */
-    suspend fun download(
+    override suspend fun download(
         ctx: Context,
         remotePath: String,
         isDir: Boolean,
@@ -93,7 +121,7 @@ class FtpSession(private val host: String, private val port: Int) {
         onBytes: (String, Long) -> Unit,
     ) {
         val job = currentCoroutineContext()[Job]
-        val root = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+        val root = treeRoot(treeUri)
         io {
             try {
                 downloadInto(ctx, root, remotePath, isDir, onBytes) { job?.isActive == false }
@@ -117,8 +145,7 @@ class FtpSession(private val host: String, private val port: Int) {
         val cr = ctx.contentResolver
         val name = remotePath.trimEnd('/').substringAfterLast('/').ifEmpty { "PS5" }
         if (isDir) {
-            val dirDoc = DocumentsContract.createDocument(cr, parentDoc, DocumentsContract.Document.MIME_TYPE_DIR, name)
-                ?: throw IOException("Can't create folder $name on the phone")
+            val dirDoc = createPhoneDir(ctx, parentDoc, name)
             val children = listFiles(remotePath).filterNotNull()
                 .filter { val n = it.name.substringAfterLast('/'); n != "." && n != ".." }
             for (c in children) {
@@ -126,10 +153,7 @@ class FtpSession(private val host: String, private val port: Int) {
                     c.isDirectory, onBytes, cancelled)
             }
         } else {
-            val ext = name.substringAfterLast('.', "").lowercase()
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
-            val fileDoc = DocumentsContract.createDocument(cr, parentDoc, mime, name)
-                ?: throw IOException("Can't create $name on the phone")
+            val fileDoc = createPhoneFile(ctx, parentDoc, name)
             val out = cr.openOutputStream(fileDoc) ?: throw IOException("Can't write $name on the phone")
             out.use { os ->
                 val ins = retrieveFileStream(remotePath)
@@ -149,7 +173,7 @@ class FtpSession(private val host: String, private val port: Int) {
         }
     }
 
-    fun closeAsync() {
+    override fun closeAsync() {
         Thread { runCatching { if (ftp.isConnected) { ftp.logout(); ftp.disconnect() } } }.start()
     }
 }

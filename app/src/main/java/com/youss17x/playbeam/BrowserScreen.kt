@@ -29,7 +29,7 @@ private sealed interface BrowserDialog {
     data class Delete(val file: RemoteFile) : BrowserDialog
 }
 
-/** Browses the PS5 over FTP. [onPick] returns the folder chosen as upload destination. */
+/** Browses the PS5 (PlayBeam Server if running, else FTP). [onPick] returns the chosen upload destination. */
 @Composable
 fun BrowserScreen(
     host: String,
@@ -38,8 +38,13 @@ fun BrowserScreen(
     onPick: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    val session = remember(host, port) { FtpSession(host, port) }
-    DisposableEffect(session) { onDispose { session.closeAsync() } }
+    // PlayBeam Server when it is running on the PS5, otherwise FTP
+    var session by remember { mutableStateOf<RemoteFs?>(null) }
+    LaunchedEffect(host, port) {
+        session = if (ServerClient.isRunning(host)) ServerSession(host) else FtpSession(host, port)
+    }
+    val current = session
+    DisposableEffect(current) { onDispose { current?.closeAsync() } }
     val scope = rememberCoroutineScope()
 
     var path by remember { mutableStateOf(startPath.trim().ifBlank { "/" }) }
@@ -69,7 +74,7 @@ fun BrowserScreen(
         downloadName = f.name
         downloadJob = scope.launch {
             try {
-                session.download(ctx, remote, f.isDir, tree) { name, n ->
+                session!!.download(ctx, remote, f.isDir, tree) { name, n ->
                     downloadName = name
                     downloadBytes += n
                 }
@@ -77,7 +82,7 @@ fun BrowserScreen(
             } catch (e: CancellationException) {
                 downloadMsg = "⏹ Download stopped"
             } catch (e: Exception) {
-                downloadMsg = "❌ ${e.message ?: "Download failed"}"
+                downloadMsg = "❌ ${friendlyError(ctx, host, e)}"
             }
             downloadJob = null
         }
@@ -103,14 +108,15 @@ fun BrowserScreen(
         else { pendingDownload = f; pickDownloadFolder.launch(null) }
     }
 
-    LaunchedEffect(path, reloadKey) {
+    LaunchedEffect(path, reloadKey, current) {
+        val session = current ?: run { loading = true; return@LaunchedEffect }
         loading = true
         error = null
         try {
             items = session.list(path)
         } catch (e: Exception) {
             items = emptyList()
-            error = e.message ?: "Can't connect to $host:$port"
+            error = friendlyError(ctx, host, e)
         }
         loading = false
     }
@@ -122,7 +128,7 @@ fun BrowserScreen(
                 block()
                 reloadKey++
             } catch (e: Exception) {
-                error = e.message ?: "Failed"
+                error = friendlyError(ctx, host, e)
                 loading = false
             }
         }
@@ -134,7 +140,10 @@ fun BrowserScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
-            Text("PS5 files", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("PS5 files", style = MaterialTheme.typography.titleLarge)
+                current?.let { Text("via ${it.via}", style = MaterialTheme.typography.bodySmall) }
+            }
             IconButton(onClick = { dialog = BrowserDialog.NewFolder }) { PIcon(R.drawable.ic_plus, Pearl.Ink) }
         }
 
@@ -212,11 +221,11 @@ fun BrowserScreen(
         null -> Unit
         BrowserDialog.NewFolder -> NameDialog("New folder", "", "Create", onDismiss = { dialog = null }) { name ->
             dialog = null
-            act { session.makeDir(joinPath(path, name)) }
+            act { current!!.makeDir(joinPath(path, name)) }
         }
         is BrowserDialog.Rename -> NameDialog("Rename", d.file.name, "Rename", onDismiss = { dialog = null }) { name ->
             dialog = null
-            act { session.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
+            act { current!!.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
         }
         is BrowserDialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
@@ -231,7 +240,7 @@ fun BrowserScreen(
             confirmButton = {
                 TextButton(onClick = {
                     dialog = null
-                    act { session.deletePath(joinPath(path, d.file.name), d.file.isDir) }
+                    act { current!!.deletePath(joinPath(path, d.file.name), d.file.isDir) }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },

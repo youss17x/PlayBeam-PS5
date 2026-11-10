@@ -56,7 +56,7 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     }
 
     private fun ok(reply: String): String {
-        if (!reply.startsWith("OK")) throw IOException(reply.removePrefix("ERR ").ifBlank { "Server error" })
+        if (!reply.startsWith("OK")) throw ServerError(reply.removePrefix("ERR ").ifBlank { "Server error" })
         return reply
     }
 
@@ -72,6 +72,46 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     fun rm(path: String) { command("RM $path") }
 
     fun shutdownServer() { command("SHUTDOWN") }
+
+    fun rmtree(path: String) { command("RMTREE $path") }
+
+    fun rename(from: String, to: String) {
+        require('\t' !in from && '\t' !in to) { "Invalid name" }
+        command("RENAME $from\t$to")
+    }
+
+    fun list(path: String): List<RemoteFile> {
+        send("LIST $path")
+        val out = mutableListOf<RemoteFile>()
+        while (true) {
+            val line = readLine()
+            if (line.startsWith("D ") || line.startsWith("F ")) {
+                val rest = line.substring(2)
+                val size = rest.substringBefore(' ').toLongOrNull() ?: 0
+                val name = rest.substringAfter(' ', "")
+                if (name.isNotEmpty()) out += RemoteFile(name, line[0] == 'D', size)
+                continue
+            }
+            ok(line)
+            return out.sortedWith(compareBy({ !it.isDir }, { it.name.lowercase() }))
+        }
+    }
+
+    /** Copies a PS5 file into [dest]. */
+    fun get(path: String, dest: java.io.OutputStream, onBytes: (Long) -> Unit, checkActive: () -> Unit) {
+        val size = command("GET $path").substringAfter(' ').trim().toLongOrNull()
+            ?: throw IOException("Bad reply from PlayBeam Server")
+        val buf = ByteArray(1 shl 20)
+        var left = size
+        while (left > 0) {
+            checkActive()
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+            if (n < 0) throw IOException("Connection lost while downloading")
+            dest.write(buf, 0, n)
+            left -= n
+            onBytes(n.toLong())
+        }
+    }
 
     /**
      * Writes [length] bytes from [source] to [path], starting at [offset] (0 = new file).
@@ -137,6 +177,9 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
         }
     }
 }
+
+/** An error reported by the server itself (the connection is still fine). */
+class ServerError(message: String) : IOException(message)
 
 /** Common shape of the FTP and PlayBeam Server uploaders. */
 interface Uploader {

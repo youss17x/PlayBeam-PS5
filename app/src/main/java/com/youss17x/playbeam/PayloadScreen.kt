@@ -106,7 +106,8 @@ fun PayloadScreen(state: AppState) {
                 serverMsg = if (up) "✅ PlayBeam Server is running — uploads now use it automatically"
                     else "Sent, but the server didn't answer. Check the PS5 notifications."
             } catch (e: Exception) {
-                serverMsg = "❌ ${e.message ?: "Send failed"}. Is the ELF loader running on port ${port}?"
+                serverMsg = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
+                    else "❌ ${e.message ?: "Send failed"}. Is the ELF loader running on port ${port}?"
             }
             serverBusy = null
         }
@@ -142,7 +143,8 @@ fun PayloadScreen(state: AppState) {
                 status = "✅ ${p.name} sent (${formatBytes(size.toLong())}) to $host:$port"
             } catch (e: Exception) {
                 statusOk = false
-                status = "❌ ${e.message ?: "Send failed"}. Is the payload loader running on the PS5?"
+                status = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
+                    else "❌ ${e.message ?: "Send failed"}. Is the payload loader running on the PS5?"
             }
             sending = null
         }

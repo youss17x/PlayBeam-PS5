@@ -21,6 +21,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Start it from the app with one tap (**Payload → Start on PS5**)
 - Faster uploads than FTP; the app uses it automatically when it's running
 - **Extracts ZIP files on the PS5** after uploading (and deletes the .zip)
+- Powers the PS5 file browser and downloads too — no FTP server needed
 - Source and protocol: [`payload/`](payload/)
 
 **PS5**
@@ -57,6 +58,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `FtpSession.kt` | FTP commands used by the browser (list, create, rename, delete, download) |
 | `PS5Discovery.kt` | Finds the PS5 on the local network |
 | `ServerClient.kt` | PlayBeam Server client and uploader |
+| `ServerSession.kt` | PS5 file browser over PlayBeam Server |
 | `payload/` | PlayBeam Server PS5 payload (C, PS5 Payload SDK) |
 | `FileScanner.kt` | Lists the selected files and folders |
 | `Store.kt` | Saved consoles, history and recent payloads |

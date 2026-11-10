@@ -12,12 +12,18 @@
      UNZIP <zip>\t<dest dir>       -> PROG <done> <total> lines while extracting,
                                       then OK <files> | ERR <reason>
      RM <path>                     -> OK | ERR <reason>          (removes one file)
+     RMTREE <path>                 -> OK | ERR <reason>          (removes a folder and its content)
+     RENAME <from>\t<to>           -> OK | ERR <reason>
+     LIST <dir>                    -> one line per entry "D <size> <name>" or "F <size> <name>",
+                                      then OK <count> | ERR <reason>
+     GET <path>                    -> OK <size>, then <size> raw bytes | ERR <reason>
      QUIT                          -> closes this connection
      SHUTDOWN                      -> OK, then the server exits
 
    Every connection runs in its own thread, so the app can upload over several
    connections at once. ZIP extraction uses miniz (MIT licence, see miniz-LICENSE). */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -37,7 +43,7 @@
 
 #include "miniz.h"
 
-#define SERVER_VERSION "1.0"
+#define SERVER_VERSION "1.1"
 #define SERVER_PORT 9113
 #define LINE_MAX_LEN 4096
 #define IO_BUF_SIZE (4 * 1024 * 1024)
@@ -228,6 +234,97 @@ static int cmd_put(conn_t *c, char *args) {
   return 0;
 }
 
+static void join_path(char *out, size_t cap, const char *dir, const char *name) {
+  size_t len = strlen(dir);
+  if (len > 0 && dir[len - 1] == '/') snprintf(out, cap, "%s%s", dir, name);
+  else snprintf(out, cap, "%s/%s", dir, name);
+}
+
+static void cmd_list(conn_t *c, const char *path) {
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  DIR *d = opendir(path);
+  if (!d) { send_line(c, "ERR %s", strerror(errno)); return; }
+
+  char full[LINE_MAX_LEN];
+  unsigned count = 0;
+  struct dirent *e;
+  while ((e = readdir(d)) != NULL) {
+    if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+    if (strchr(e->d_name, '\n')) continue;
+    join_path(full, sizeof full, path, e->d_name);
+    struct stat st;
+    int is_dir = e->d_type == DT_DIR;
+    long long size = 0;
+    if (stat(full, &st) == 0) {
+      is_dir = S_ISDIR(st.st_mode);
+      size = is_dir ? 0 : (long long)st.st_size;
+    }
+    if (send_line(c, "%c %lld %s", is_dir ? 'D' : 'F', size, e->d_name) != 0) break;
+    count++;
+  }
+  closedir(d);
+  send_line(c, "OK %u", count);
+}
+
+/* Returns -1 if the connection broke (caller must close it). */
+static int cmd_get(conn_t *c, const char *path) {
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return 0; }
+  int f = open(path, O_RDONLY);
+  if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return 0; }
+  struct stat st;
+  if (fstat(f, &st) != 0 || !S_ISREG(st.st_mode)) {
+    send_line(c, "ERR not a file");
+    close(f);
+    return 0;
+  }
+  if (send_line(c, "OK %lld", (long long)st.st_size) != 0) { close(f); return -1; }
+  long long left = st.st_size;
+  while (left > 0) {
+    size_t want = left > IO_BUF_SIZE ? IO_BUF_SIZE : (size_t)left;
+    ssize_t n = read(f, c->io, want);
+    if (n <= 0) { close(f); return -1; } /* can't report mid-stream: drop the connection */
+    if (write_all(c->fd, c->io, (size_t)n) != 0) { close(f); return -1; }
+    left -= n;
+  }
+  close(f);
+  return 0;
+}
+
+static int remove_tree(const char *path) {
+  struct stat st;
+  if (lstat(path, &st) != 0) return -1;
+  if (!S_ISDIR(st.st_mode)) return unlink(path);
+
+  DIR *d = opendir(path);
+  if (!d) return -1;
+  char full[LINE_MAX_LEN];
+  struct dirent *e;
+  int rc = 0;
+  while ((e = readdir(d)) != NULL) {
+    if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+    join_path(full, sizeof full, path, e->d_name);
+    if (remove_tree(full) != 0) { rc = -1; break; }
+  }
+  closedir(d);
+  if (rc != 0) return rc;
+  return rmdir(path);
+}
+
+static void cmd_rmtree(conn_t *c, const char *path) {
+  if (!valid_path(path) || strcmp(path, "/") == 0) { send_line(c, "ERR bad path"); return; }
+  if (remove_tree(path) != 0) send_line(c, "ERR %s", strerror(errno));
+  else send_line(c, "OK");
+}
+
+static void cmd_rename(conn_t *c, char *args) {
+  char *tab = strchr(args, '\t');
+  if (!tab) { send_line(c, "ERR usage: RENAME <from><TAB><to>"); return; }
+  *tab = '\0';
+  if (!valid_path(args) || !valid_path(tab + 1)) { send_line(c, "ERR bad path"); return; }
+  if (rename(args, tab + 1) != 0) send_line(c, "ERR %s", strerror(errno));
+  else send_line(c, "OK");
+}
+
 typedef struct unzip_ctx {
   conn_t *c;
   int fd;
@@ -356,6 +453,14 @@ static void *client_thread(void *arg) {
       cmd_unzip(c, line + 6);
     } else if (strncmp(line, "RM ", 3) == 0) {
       cmd_rm(c, line + 3);
+    } else if (strncmp(line, "RMTREE ", 7) == 0) {
+      cmd_rmtree(c, line + 7);
+    } else if (strncmp(line, "RENAME ", 7) == 0) {
+      cmd_rename(c, line + 7);
+    } else if (strncmp(line, "LIST ", 5) == 0) {
+      cmd_list(c, line + 5);
+    } else if (strncmp(line, "GET ", 4) == 0) {
+      if (cmd_get(c, line + 4) != 0) break;
     } else if (strcmp(line, "QUIT") == 0) {
       break;
     } else if (strcmp(line, "SHUTDOWN") == 0) {
@@ -410,6 +515,7 @@ int main(void) {
     }
     int size = SOCK_BUF_SIZE;
     setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof size);
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
 
     conn_t *c = calloc(1, sizeof *c);
