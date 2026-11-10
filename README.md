@@ -1,6 +1,10 @@
-# PlayBeam PS5
+<p align="center">
+  <img src="docs/icon.png" width="112" alt="PlayBeam PS5 icon">
+</p>
 
-An Android app to send files and folders from your phone to your PS5 over Wi-Fi.
+<h1 align="center">PlayBeam PS5</h1>
+
+<p align="center">An Android app to send files and folders from your phone to your PS5 over Wi-Fi.</p>
 
 <p align="center">
   <img src="docs/screenshots/upload.jpg" width="200" alt="Upload">
