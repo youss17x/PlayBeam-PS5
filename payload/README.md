@@ -31,6 +31,8 @@ One command per line (`\n`), paths are absolute and take the rest of the line:
 | `MKDIR <path>` | `OK` / `ERR <reason>` |
 | `SIZE <path>` | `OK <bytes>` (`OK -1` if missing) |
 | `PUT <offset> <length> <path>` | `READY`, then send the bytes, then `OK` / `ERR` |
+| `CREATE <size> <path>` | Empty file for a split upload: `OK SPARSE` (pieces may be sent in parallel) or `OK` |
+| `PUTR <offset> <length> <path>` | Like `PUT` but never truncates (one piece of a split upload) |
 | `UNZIP <zip>⇥<dest>` | `PROG <done> <total>` lines, then `OK <files>` / `ERR` |
 | `RM <path>` | `OK` / `ERR` |
 | `RMTREE <path>` | `OK` / `ERR` (folder and its content) |

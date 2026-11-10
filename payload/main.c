@@ -9,6 +9,9 @@
      PUT <offset> <length> <path>  -> READY, then the client sends <length> raw bytes,
                                       then OK | ERR <reason>
                                       offset 0 creates/truncates, offset > 0 continues a file
+     CREATE <size> <path>          -> creates an empty file for a split upload:
+                                      OK SPARSE (pieces may be written in parallel) | OK
+     PUTR <offset> <length> <path> -> like PUT but never truncates (one piece of a split upload)
      UNZIP <zip>\t<dest dir>       -> PROG <done> <total> lines while extracting,
                                       then OK <files> | ERR <reason>
      RM <path>                     -> OK | ERR <reason>          (removes one file)
@@ -44,6 +47,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#ifdef __FreeBSD__
+#include <sys/mount.h>
+#endif
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -52,7 +58,7 @@
 
 #include "miniz.h"
 
-#define SERVER_VERSION "1.3"
+#define SERVER_VERSION "1.4"
 #define SERVER_PORT 9113
 #define LINE_MAX_LEN 4096
 #define IO_BUF_SIZE (4 * 1024 * 1024)
@@ -212,8 +218,37 @@ static void cmd_rm(conn_t *c, const char *path) {
   else send_line(c, "OK");
 }
 
+/* True when pieces of a file can be written at any offset cheaply (UFS, the PS5's internal
+   drive). exFAT / FAT USB drives would fill the gaps with zeros, so uploads stay in order there. */
+static int sparse_ok(const char *path) {
+#ifdef __FreeBSD__
+  struct statfs st;
+  if (statfs(path, &st) != 0) return 0;
+  return strcmp(st.f_fstypename, "ufs") == 0 || strcmp(st.f_fstypename, "tmpfs") == 0 ||
+         strcmp(st.f_fstypename, "zfs") == 0;
+#else
+  (void)path;
+  return 1;
+#endif
+}
+
+static void cmd_create(conn_t *c, char *args) {
+  char *end;
+  long long size = strtoll(args, &end, 10);
+  if (*end != ' ' || size < 0) { send_line(c, "ERR bad CREATE"); return; }
+  const char *path = end + 1;
+  if (!valid_path(path)) { send_line(c, "ERR bad path"); return; }
+  if (make_dirs(path, 1) != 0) { send_line(c, "ERR mkdir: %s", strerror(errno)); return; }
+  int f = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+  if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return; }
+  int sparse = sparse_ok(path);
+  if (sparse && size > 0 && ftruncate(f, (off_t)size) != 0) sparse = 0;
+  close(f);
+  send_line(c, sparse ? "OK SPARSE" : "OK");
+}
+
 /* Returns -1 if the connection broke (caller must close it). */
-static int cmd_put(conn_t *c, char *args) {
+static int cmd_put(conn_t *c, char *args, int may_truncate) {
   char *end;
   long long offset = strtoll(args, &end, 10);
   if (*end != ' ') { send_line(c, "ERR bad PUT"); return 0; }
@@ -223,7 +258,7 @@ static int cmd_put(conn_t *c, char *args) {
   if (!valid_path(path)) { send_line(c, "ERR bad path"); return 0; }
 
   if (make_dirs(path, 1) != 0) { send_line(c, "ERR mkdir: %s", strerror(errno)); return 0; }
-  int flags = O_WRONLY | O_CREAT | (offset == 0 ? O_TRUNC : 0);
+  int flags = O_WRONLY | O_CREAT | (offset == 0 && may_truncate ? O_TRUNC : 0);
   int f = open(path, flags, 0777);
   if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return 0; }
   if (offset > 0 && lseek(f, (off_t)offset, SEEK_SET) < 0) {
@@ -644,7 +679,11 @@ static void *client_thread(void *arg) {
     if (strcmp(line, "HELLO") == 0) {
       send_line(c, "OK PlayBeam-Server " SERVER_VERSION);
     } else if (strncmp(line, "PUT ", 4) == 0) {
-      if (cmd_put(c, line + 4) != 0) break;
+      if (cmd_put(c, line + 4, 1) != 0) break;
+    } else if (strncmp(line, "PUTR ", 5) == 0) {
+      if (cmd_put(c, line + 5, 0) != 0) break;
+    } else if (strncmp(line, "CREATE ", 7) == 0) {
+      cmd_create(c, line + 7);
     } else if (strncmp(line, "MKDIR ", 6) == 0) {
       cmd_mkdir(c, line + 6);
     } else if (strncmp(line, "SIZE ", 5) == 0) {

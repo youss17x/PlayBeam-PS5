@@ -3,6 +3,7 @@ package com.youss17x.playbeam
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -70,6 +71,17 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     fun size(path: String): Long = command("SIZE $path").substringAfter(' ').trim().toLongOrNull() ?: -1
 
     fun rm(path: String) { command("RM $path") }
+
+    /**
+     * Creates an empty [size]-byte file for a split upload. Returns true if pieces can be written
+     * in parallel, false if not (the file still exists), or null if the server is too old (< 1.4).
+     */
+    fun create(path: String, size: Long): Boolean? {
+        send("CREATE $size $path")
+        val reply = readLine()
+        if (reply == "ERR unknown command") return null
+        return ok(reply).trim() == "OK SPARSE"
+    }
 
     fun shutdownServer() { command("SHUTDOWN") }
 
@@ -177,6 +189,7 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     /**
      * Writes [length] bytes from [source] to [path], starting at [offset] (0 = new file).
      * [onBytes] is called for every chunk sent; [checkActive] may throw to cancel.
+     * With [truncate] false the file is never cut short (one piece of a split upload).
      */
     fun put(
         path: String,
@@ -186,8 +199,9 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
         buf: ByteArray,
         onBytes: (Long) -> Unit,
         checkActive: () -> Unit,
+        truncate: Boolean = true,
     ) {
-        send("PUT $offset $length $path")
+        send("${if (truncate) "PUT" else "PUTR"} $offset $length $path")
         val reply = readLine()
         if (reply != "READY") throw IOException(reply.removePrefix("ERR ").ifBlank { "Server refused $path" })
         var left = length
@@ -266,11 +280,15 @@ class ServerUploader(
         // Folders (the server also creates parent folders of every file; this keeps empty ones)
         Worker().use { w -> for (d in dirs) { currentCoroutineContext().ensureActive(); w.retry(cb) { it.mkdirs(remotePath(d)) } } }
 
+        // Big files go one at a time, each split into pieces sent over all connections at once
+        val (big, small) = files.partition { wanted > 1 && it.size >= SPLIT_MIN_SIZE }
+        for (e in big) uploadSplit(e, resume, cb)
+
         val queue = Channel<Entry>(Channel.UNLIMITED)
-        files.forEach { queue.trySend(it) }
+        small.forEach { queue.trySend(it) }
         queue.close()
 
-        val count = wanted.coerceAtMost(maxOf(1, files.size))
+        val count = wanted.coerceAtMost(maxOf(1, small.size))
         (0 until count).map {
             launch(Dispatchers.IO) {
                 Worker().use { w ->
@@ -279,6 +297,69 @@ class ServerUploader(
                 }
             }
         }.joinAll()
+    }
+
+    /**
+     * Sends one big file as [wanted] pieces in parallel into "<name>.pbpart", then renames it.
+     * Falls back to a normal upload when the drive can't take pieces out of order (exFAT USB),
+     * when the server is older than 1.4, or when resuming a file that was partly sent in order.
+     */
+    private suspend fun uploadSplit(e: Entry, resume: Boolean, cb: UploadCallbacks) = coroutineScope {
+        currentCoroutineContext().ensureActive()
+        val remote = remotePath(e)
+        val temp = "$remote.pbpart"
+        var split = false
+        Worker().use { ctl ->
+            ctl.retry(cb) { c ->
+                val existing = if (resume) c.size(remote) else -1
+                split = existing <= 0 && when (c.create(temp, e.size)) {
+                    true -> true
+                    false -> { runCatching { c.rm(temp) }; false }
+                    null -> false
+                }
+            }
+            if (!split) {
+                ctl.uploadFile(e, resume, cb, ByteArray(1 shl 20))
+                return@coroutineScope
+            }
+        }
+
+        cb.onFileStart(e)
+        try {
+            val piece = ((e.size / wanted) + PIECE_ALIGN - 1) / PIECE_ALIGN * PIECE_ALIGN
+            (0 until wanted).map { i ->
+                val start = piece * i
+                val len = minOf(piece, e.size - start)
+                launch(Dispatchers.IO) {
+                    if (len > 0) Worker().use { w -> w.uploadRange(e, temp, start, len, cb, ByteArray(1 shl 20)) }
+                }
+            }.joinAll()
+            Worker().use { w -> w.retry(cb) { it.rename(temp, remote) } }
+        } catch (t: Throwable) {
+            // don't leave a half-written temp file behind
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { ServerClient(host).use { it.rm(temp) } }
+            }
+            throw t
+        }
+        cb.onFileDone(e)
+    }
+
+    /** Opens [e] and skips to [offset]. */
+    private fun openAt(e: Entry, offset: Long): InputStream {
+        val ins = context.contentResolver.openInputStream(e.uri!!)
+            ?: throw IOException("Cannot read ${e.relativePath}")
+        try {
+            var skip = offset
+            while (skip > 0) {
+                val s = ins.skip(skip)
+                if (s <= 0) { if (ins.read() < 0) throw IOException("File is shorter than expected"); skip-- }
+                else skip -= s
+            }
+        } catch (t: Throwable) {
+            ins.close(); throw t
+        }
+        return ins
     }
 
     /** One connection, reopened automatically when it drops. */
@@ -326,15 +407,7 @@ class ServerUploader(
                     reported = offset
                     if (offset == e.size && e.size > 0) return@retry
 
-                    val input = context.contentResolver.openInputStream(e.uri!!)
-                        ?: throw IOException("Cannot read ${e.relativePath}")
-                    input.use { ins ->
-                        var skip = offset
-                        while (skip > 0) {
-                            val s = ins.skip(skip)
-                            if (s <= 0) { if (ins.read() < 0) throw IOException("File is shorter than expected"); skip-- }
-                            else skip -= s
-                        }
+                    openAt(e, offset).use { ins ->
                         c.put(remote, offset, e.size - offset, ins, buf,
                             onBytes = { n -> reported += n; cb.onBytes(n) },
                             checkActive = { if (!watcher.isActive) throw CancellationException("Stopped") })
@@ -346,9 +419,35 @@ class ServerUploader(
             }
             cb.onFileDone(e)
         }
+
+        /** Sends bytes [start] until [start]+[len] of [e] into [path]; a failed piece is resent whole. */
+        suspend fun uploadRange(e: Entry, path: String, start: Long, len: Long, cb: UploadCallbacks, buf: ByteArray) =
+            coroutineScope {
+                var reported = 0L
+                var finished = false
+                val watcher = launch { try { awaitCancellation() } finally { if (!finished) close() } }
+                try {
+                    retry(cb) { c ->
+                        cb.onSkipped(-reported)
+                        reported = 0
+                        openAt(e, start).use { ins ->
+                            c.put(path, start, len, ins, buf,
+                                onBytes = { n -> reported += n; cb.onBytes(n) },
+                                checkActive = { if (!watcher.isActive) throw CancellationException("Stopped") },
+                                truncate = false)
+                        }
+                    }
+                } finally {
+                    finished = true
+                    watcher.cancel()
+                }
+            }
     }
 
     companion object {
         private const val MAX_RETRIES = 3
+        /** Files at least this big are split between the connections. */
+        private const val SPLIT_MIN_SIZE = 64L shl 20
+        private const val PIECE_ALIGN = 1L shl 20
     }
 }

@@ -1,8 +1,15 @@
 # PlayBeam PS5
 
-An Android app to send files and folders from your phone to your PS5 over Wi-Fi (FTP).
+An Android app to send files and folders from your phone to your PS5 over Wi-Fi.
 
-## Features (v0.8)
+<p align="center">
+  <img src="docs/screenshots/upload.jpg" width="200" alt="Upload">
+  <img src="docs/screenshots/files.jpg" width="200" alt="Files">
+  <img src="docs/screenshots/settings.jpg" width="200" alt="Settings">
+  <img src="docs/screenshots/ps5-info.jpg" width="200" alt="PS5 info">
+</p>
+
+## Features
 
 Five tabs: **Upload · Files · Payload · History · Settings**.
 
@@ -16,6 +23,8 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Pick a whole folder (including all subfolders) or multiple files
 - **Share → PlayBeam** from any app (gallery, file manager, browser downloads…)
 - **Parallel uploads**: 1–4 connections at once — much faster for folders with many small files
+- **Split big files**: with PlayBeam Server, files over 64 MB are sent in pieces over all connections
+  at once (on the PS5's internal drive; USB drives get one piece at a time)
 - **Upload queue**: add more uploads while one is running; remove or stop them any time
 - **Resume**: files already on the PS5 are skipped, unfinished files continue where they stopped,
   and dropped connections are retried automatically
@@ -38,7 +47,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - **Payload sender**: send `.elf` / `.bin` payloads to the PS5 loader (e.g. to start the FTP server),
   with a list of recent payloads for one-tap re-sending
 - **PS5 info** in Settings: model, firmware, live CPU / SoC temperatures, uptime and free space on every drive
-- Quick destination presets: `/data/homebrew`, `/data/etaHEN/games`, `/mnt/usb0`
+- Quick destination presets: `/data/homebrew`, `/mnt/usb0/homebrew`
 
 ## Requirements
 - A jailbroken PS5 with an ELF loader (for PlayBeam Server) and/or an FTP server (e.g. etaHEN's)
