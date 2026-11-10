@@ -161,7 +161,7 @@ class UploadService : Service() {
             uploader.upload(
                 entries, job.resume,
                 UploadCallbacks(
-                    onFileStart = { e -> synchronized(lock) { state.value = state.value.copy(currentFile = e.relativePath) } },
+                    onFileStart = { e -> synchronized(lock) { state.value = state.value.copy(currentFile = e.relativePath, message = "") } },
                     onBytes = { n -> synchronized(lock) { done += n; sent += n; refresh() } },
                     onSkipped = { n -> synchronized(lock) { done += n; skipped += n; refresh() } },
                     onFileDone = {
