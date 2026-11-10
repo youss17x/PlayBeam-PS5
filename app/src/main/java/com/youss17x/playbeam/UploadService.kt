@@ -45,6 +45,11 @@ class UploadService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        I18n.load(this)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> currentJob?.cancel()
@@ -84,7 +89,7 @@ class UploadService : Service() {
     private fun enqueue(job: UploadJob) {
         createChannels()
         ServiceCompat.startForeground(
-            this, NOTIF_ID, buildProgressNotification(job.label, "Waiting…", 0, true),
+            this, NOTIF_ID, buildProgressNotification(job.label, S.waitingNotif, 0, true),
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         )
         pending.addLast(job)
@@ -120,7 +125,7 @@ class UploadService : Service() {
         val state = UploadState.progress
         val lock = Any()
         val startTime = SystemClock.elapsedRealtime()
-        state.value = Progress(running = true, jobLabel = job.label, message = "Scanning files…")
+        state.value = Progress(running = true, jobLabel = job.label, message = S.scanning)
 
         var files = 0
         var totalBytes = 0L
@@ -134,7 +139,7 @@ class UploadService : Service() {
             files = fileEntries.size
             totalBytes = fileEntries.sumOf { it.size }
             state.value = state.value.copy(totalFiles = files, totalBytes = totalBytes,
-                message = "Connecting to ${job.host}…")
+                message = S.connectingTo(job.host))
 
             // PlayBeam Server payload if it is running on the PS5 (faster), otherwise FTP
             val viaServer = ServerClient.isRunning(job.host)
@@ -153,7 +158,7 @@ class UploadService : Service() {
                 val p = state.value.copy(doneBytes = done, speedBytesPerSec = (sent / secs).toLong())
                 state.value = p
                 val waiting = UploadState.queue.value.size
-                val queued = if (waiting > 0) " • $waiting waiting" else ""
+                val queued = if (waiting > 0) S.nWaiting(waiting) else ""
                 notifyProgress(job.label, "${p.currentFile}\n${formatBytes(p.speedBytesPerSec)}/s$queued",
                     (p.fraction * 100).toInt())
             }
@@ -178,7 +183,7 @@ class UploadService : Service() {
             val zips = fileEntries.filter { it.relativePath.endsWith(".zip", ignoreCase = true) }
             if (job.extractZips && zips.isNotEmpty()) {
                 if (!viaServer) {
-                    zipNote = " — ZIPs not extracted (start PlayBeam Server for that)"
+                    zipNote = S.zipsNotExtracted
                 } else {
                     var extracted = 0
                     for ((n, z) in zips.withIndex()) {
@@ -189,24 +194,24 @@ class UploadService : Service() {
                             val pct = if (total > 0) (done * 100 / total).toInt() else 0
                             synchronized(lock) {
                                 state.value = state.value.copy(currentFile = name,
-                                    message = "Extracting $name (${n + 1}/${zips.size}) — $pct%")
+                                    message = S.extractingPct(name, n + 1, zips.size, pct))
                             }
-                            notifyProgress(job.label, "Extracting $name", pct)
+                            notifyProgress(job.label, S.extracting(name), pct)
                         }
                     }
-                    zipNote = " — extracted $extracted files from ${zips.size} ZIP(s)"
+                    zipNote = S.extractedNote(extracted, zips.size)
                 }
             }
 
-            val skippedNote = if (skipped > 0) " — ${formatBytes(skipped)} were already on the PS5" else ""
-            val via = if (viaServer) " via PlayBeam Server" else ""
-            message = "✅ Upload complete$via: $files files (${formatBytes(totalBytes)})$skippedNote$zipNote"
+            val skippedNote = if (skipped > 0) S.skippedNote(formatBytes(skipped)) else ""
+            val via = if (viaServer) S.viaServer else ""
+            message = S.uploadComplete(via, files, formatBytes(totalBytes)) + skippedNote + zipNote
             ok = true
         } catch (e: CancellationException) {
-            message = "⏹ Upload stopped"
+            message = S.uploadStopped
         } catch (e: Exception) {
             // a socket closed by Stop shows up as an IOException
-            message = if (!currentCoroutineContext().isActive) "⏹ Upload stopped" else "❌ ${friendlyError(this, job.host, e)}"
+            message = if (!currentCoroutineContext().isActive) S.uploadStopped else "❌ ${friendlyError(this, job.host, e)}"
         }
 
         val duration = SystemClock.elapsedRealtime() - startTime
@@ -264,11 +269,11 @@ class UploadService : Service() {
     private fun createChannels() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CH_PROGRESS, "Upload progress", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CH_PROGRESS, S.chProgress, NotificationManager.IMPORTANCE_LOW)
         )
         // Default importance → sound / vibration when an upload finishes
         nm.createNotificationChannel(
-            NotificationChannel(CH_DONE, "Upload finished", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            NotificationChannel(CH_DONE, S.chDone, NotificationManager.IMPORTANCE_DEFAULT).apply {
                 enableVibration(true)
             }
         )
@@ -293,8 +298,8 @@ class UploadService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openAppIntent())
-            .addAction(0, "Stop", serviceAction(ACTION_STOP, 1))
-        if (UploadState.queue.value.isNotEmpty()) b.addAction(0, "Stop all", serviceAction(ACTION_STOP_ALL, 2))
+            .addAction(0, S.stop, serviceAction(ACTION_STOP, 1))
+        if (UploadState.queue.value.isNotEmpty()) b.addAction(0, S.stopAll, serviceAction(ACTION_STOP_ALL, 2))
         return b.build()
     }
 
@@ -306,7 +311,7 @@ class UploadService : Service() {
     private fun notifyFinished(job: UploadJob, ok: Boolean, message: String, durationMs: Long) {
         val n = NotificationCompat.Builder(this, CH_DONE)
             .setSmallIcon(R.drawable.ic_stat_playbeam)
-            .setContentTitle(if (ok) "${job.label} sent to PS5" else "${job.label} — not completed")
+            .setContentTitle(if (ok) S.sentToPs5(job.label) else S.notCompleted(job.label))
             .setContentText("$message • ${formatDuration(durationMs)}")
             .setStyle(NotificationCompat.BigTextStyle().bigText("$message • ${formatDuration(durationMs)}"))
             .setAutoCancel(true)

@@ -39,16 +39,16 @@ fun HistoryScreen() {
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                ScreenTitle("History", Modifier.weight(1f))
-                if (entries.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Clear") }
+                ScreenTitle(S.history, Modifier.weight(1f))
+                if (entries.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text(S.clear) }
             }
         }
         if (entries.isEmpty()) {
             item {
                 PearlCard {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("No uploads yet", style = MaterialTheme.typography.titleMedium)
-                        Text("Everything you send to the PS5 will be listed here.",
+                        Text(S.noUploads, style = MaterialTheme.typography.titleMedium)
+                        Text(S.noUploadsSub,
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -71,7 +71,7 @@ fun HistoryScreen() {
                         val d = Date(e.time)
                         Text("${dateFmt.format(d)} · ${timeFmt.format(d)} · ${formatDuration(e.durationMs)}",
                             style = MaterialTheme.typography.bodySmall)
-                        Text("${e.files} files · ${formatBytes(e.bytes)} → ${e.destination}",
+                        Text(S.historyLine(e.files, formatBytes(e.bytes), e.destination),
                             style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         if (!e.ok) Text(e.message, style = MaterialTheme.typography.bodySmall, color = Pearl.Error)
                     }
@@ -84,14 +84,14 @@ fun HistoryScreen() {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             containerColor = Pearl.Card,
-            title = { Text("Clear history?") },
-            text = { Text("This removes the upload history from this phone. Files on the PS5 are not touched.") },
+            title = { Text(S.clearHistoryQ) },
+            text = { Text(S.clearHistoryBody) },
             confirmButton = {
                 TextButton(onClick = { Store.clearHistory(ctx); reload++; confirmClear = false }) {
-                    Text("Clear", color = Pearl.Error)
+                    Text(S.clear, color = Pearl.Error)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(S.cancel) } },
         )
     }
 }

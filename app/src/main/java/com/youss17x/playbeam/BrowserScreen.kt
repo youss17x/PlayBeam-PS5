@@ -63,7 +63,7 @@ fun BrowserScreen(
     onPick: (String) -> Unit,
     onClose: (() -> Unit)?,
     onPathChange: (String) -> Unit = {},
-    pickLabel: String = "Use this folder",
+    pickLabel: String = S.useThisFolder,
 ) {
     // PlayBeam Server when it is running on the PS5, otherwise FTP
     var session by remember { mutableStateOf<RemoteFs?>(null) }
@@ -115,8 +115,8 @@ fun BrowserScreen(
             val label = when {
                 kind == "usb" && usbCount == 1 -> "USB"
                 kind == "usb" -> "USB $num"
-                num == 1 -> "Extended"
-                else -> "Extended $num"
+                num == 1 -> S.extended
+                else -> "${S.extended} $num"
             }
             Storage(label, "/mnt/${d.name}", true)
         }
@@ -137,7 +137,7 @@ fun BrowserScreen(
                 block { d, t -> opDone = d; opTotal = t }
                 info = done
             } catch (e: CancellationException) {
-                info = "Stopped"
+                info = S.stopped
             } catch (e: Exception) {
                 error = friendlyError(ctx, host, e)
             }
@@ -157,12 +157,12 @@ fun BrowserScreen(
         }
         val dest = joinPath(path, name)
         if (items.any { it.name == name }) {
-            error = "“$name” already exists here"
+            error = S.alreadyExistsHere(name)
             return
         }
         clip = null
-        if (c.cut) runOp("Moving ${c.file.name}", "✅ Moved ${c.file.name}") { p -> s.move(c.path, dest, p) }
-        else runOp("Copying ${c.file.name}", "✅ Copied ${c.file.name}") { p -> s.copy(c.path, dest, p) }
+        if (c.cut) runOp(S.moving(c.file.name), S.moved(c.file.name)) { p -> s.move(c.path, dest, p) }
+        else runOp(S.copying(c.file.name), S.copied(c.file.name)) { p -> s.copy(c.path, dest, p) }
     }
 
     // ---- download to phone ----
@@ -187,9 +187,9 @@ fun BrowserScreen(
                     downloadName = name
                     downloadBytes += n
                 }
-                info = "✅ ${f.name} saved to your phone (${formatBytes(downloadBytes)})"
+                info = S.savedToPhone(f.name, formatBytes(downloadBytes))
             } catch (e: CancellationException) {
-                info = "Download stopped"
+                info = S.downloadStopped
             } catch (e: Exception) {
                 error = friendlyError(ctx, host, e)
             }
@@ -260,9 +260,9 @@ fun BrowserScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (onClose != null) IconButton(onClick = onClose) { PIcon(R.drawable.ic_back, Pearl.Ink) }
             Column(Modifier.weight(1f)) {
-                if (onClose != null) Text("PS5 files", style = MaterialTheme.typography.titleLarge)
-                else ScreenTitle("Files")
-                current?.let { Text("via ${it.via}", style = MaterialTheme.typography.bodySmall) }
+                if (onClose != null) Text(S.ps5Files, style = MaterialTheme.typography.titleLarge)
+                else ScreenTitle(S.tabFiles)
+                current?.let { Text(S.via(it.via), style = MaterialTheme.typography.bodySmall) }
             }
             IconButton(onClick = { dialog = BrowserDialog.NewFolder }) { PIcon(R.drawable.ic_plus, Pearl.Ink) }
         }
@@ -304,7 +304,7 @@ fun BrowserScreen(
             ProgressCard(label, opDone, opTotal, onStop = { opJob?.cancel() })
         }
         if (downloadJob != null) {
-            ProgressCard("Downloading $downloadName", downloadBytes, 0, onStop = { downloadJob?.cancel() })
+            ProgressCard(S.downloading(downloadName), downloadBytes, 0, onStop = { downloadJob?.cancel() })
         }
 
         // ---- list ----
@@ -312,7 +312,7 @@ fun BrowserScreen(
             LazyColumn(Modifier.fillMaxSize()) {
                 if (!loading && error == null && items.isEmpty()) {
                     item {
-                        Text("Empty folder", style = MaterialTheme.typography.bodySmall,
+                        Text(S.emptyFolder, style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(16.dp))
                     }
                 }
@@ -344,17 +344,17 @@ fun BrowserScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PIcon(if (c.cut) R.drawable.ic_cut else R.drawable.ic_copy, Pearl.Accent, 20.dp)
                     Column(Modifier.weight(1f)) {
-                        Text(if (c.cut) "Move" else "Copy", style = MaterialTheme.typography.labelSmall, color = Pearl.Faint)
+                        Text(if (c.cut) S.move else S.copy, style = MaterialTheme.typography.labelSmall, color = Pearl.Faint)
                         Text(c.file.name, style = MaterialTheme.typography.titleSmall, maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
                     }
-                    TextButton(onClick = { clip = null }) { Text("Cancel", color = Pearl.Muted) }
+                    TextButton(onClick = { clip = null }) { Text(S.cancel, color = Pearl.Muted) }
                     Button(
                         onClick = ::paste,
                         enabled = opLabel == null,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Pearl.Accent),
-                    ) { Text("Paste here", fontWeight = FontWeight.SemiBold) }
+                    ) { Text(S.pasteHere, fontWeight = FontWeight.SemiBold) }
                 }
             }
         } else {
@@ -365,31 +365,30 @@ fun BrowserScreen(
     // ---- dialogs ----
     when (val d = dialog) {
         null -> Unit
-        BrowserDialog.NewFolder -> NameDialog("New folder", "", "Create", onDismiss = { dialog = null }) { name ->
+        BrowserDialog.NewFolder -> NameDialog(S.newFolder, "", S.create, onDismiss = { dialog = null }) { name ->
             dialog = null
             act { it.makeDir(joinPath(path, name)) }
         }
-        is BrowserDialog.Rename -> NameDialog("Rename", d.file.name, "Rename", onDismiss = { dialog = null }) { name ->
+        is BrowserDialog.Rename -> NameDialog(S.rename, d.file.name, S.rename, onDismiss = { dialog = null }) { name ->
             dialog = null
             act { it.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
         }
         is BrowserDialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
             containerColor = Pearl.Card,
-            title = { Text("Delete ${d.file.name}?") },
+            title = { Text(S.deleteQ(d.file.name)) },
             text = {
                 Text(
-                    if (d.file.isDir) "The folder and everything inside it will be deleted from the PS5. This can't be undone."
-                    else "This file will be deleted from the PS5. This can't be undone."
+                    if (d.file.isDir) S.deleteFolderBody else S.deleteFileBody
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     dialog = null
                     act { it.deletePath(joinPath(path, d.file.name), d.file.isDir) }
-                }) { Text("Delete", color = Pearl.Error) }
+                }) { Text(S.delete, color = Pearl.Error) }
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text(S.cancel) } },
         )
         is BrowserDialog.MoveTo -> MoveToDialog(
             file = d.file,
@@ -401,7 +400,7 @@ fun BrowserScreen(
             val s = current ?: return@MoveToDialog
             val src = joinPath(path, d.file.name)
             val dest = joinPath(targetDir.trimEnd('/').ifEmpty { "/" }, d.file.name)
-            if (dest != src) runOp("Moving ${d.file.name}", "✅ Moved ${d.file.name} to $targetDir") { p -> s.move(src, dest, p) }
+            if (dest != src) runOp(S.moving(d.file.name), S.movedTo(d.file.name, targetDir)) { p -> s.move(src, dest, p) }
         }
         is BrowserDialog.Details -> DetailsDialog(d.file, joinPath(path, d.file.name), current, onDismiss = { dialog = null })
     }
@@ -424,7 +423,7 @@ private fun StorageChip(st: Storage, selected: Boolean, space: Pair<Long, Long>?
                 Text(st.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                     color = if (selected) Pearl.Accent else Pearl.Ink)
                 if (space != null && space.first > 0) {
-                    Text("${formatBytes(space.second)} free", fontSize = 11.sp, color = Pearl.Muted)
+                    Text(S.free(formatBytes(space.second)), fontSize = 11.sp, color = Pearl.Muted)
                     val used = 1f - space.second.toFloat() / space.first
                     Box(Modifier.width(90.dp).height(4.dp).clip(RoundedCornerShape(50)).background(Pearl.Track)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(used.coerceIn(0f, 1f))
@@ -445,10 +444,10 @@ private fun ProgressCard(label: String, done: Long, total: Long, onStop: () -> U
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (total > 0) "${formatBytes(done)} of ${formatBytes(total)}" else formatBytes(done),
+                    Text(if (total > 0) S.ofTotal(formatBytes(done), formatBytes(total)) else formatBytes(done),
                         style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = onStop) { Text("Stop", color = Pearl.Error) }
+                TextButton(onClick = onStop) { Text(S.stop, color = Pearl.Error) }
             }
             PearlProgress(if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null)
         }
@@ -502,7 +501,7 @@ private fun FileRow(
                 color = if (homebrew) Pearl.OkText else Pearl.Ink,
                 fontWeight = if (homebrew) FontWeight.SemiBold else FontWeight.Normal)
             when {
-                homebrew -> Text("Homebrew apps", style = MaterialTheme.typography.bodySmall, color = Pearl.Ok)
+                homebrew -> Text(S.homebrewApps, style = MaterialTheme.typography.bodySmall, color = Pearl.Ok)
                 !f.isDir -> Text(formatBytes(f.size), style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -510,14 +509,14 @@ private fun FileRow(
             IconButton(onClick = { menu = true }) { PIcon(R.drawable.ic_more, Pearl.Faint, 20.dp) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Pearl.Card) {
                 val close = { menu = false }
-                MenuItem("Download to phone", R.drawable.ic_download, close, enabled = !busy, action = onDownload)
-                if (canCopy) MenuItem("Copy", R.drawable.ic_copy, close, action = onCopy)
-                MenuItem("Cut", R.drawable.ic_cut, close, action = onCut)
-                MenuItem("Move to…", R.drawable.ic_move, close, enabled = !busy, action = onMoveTo)
-                MenuItem("Rename", R.drawable.ic_edit, close, action = onRename)
-                MenuItem("Details", R.drawable.ic_info, close, action = onDetails)
+                MenuItem(S.downloadToPhone, R.drawable.ic_download, close, enabled = !busy, action = onDownload)
+                if (canCopy) MenuItem(S.copy, R.drawable.ic_copy, close, action = onCopy)
+                MenuItem(S.cut, R.drawable.ic_cut, close, action = onCut)
+                MenuItem(S.moveTo, R.drawable.ic_move, close, enabled = !busy, action = onMoveTo)
+                MenuItem(S.rename, R.drawable.ic_edit, close, action = onRename)
+                MenuItem(S.details, R.drawable.ic_info, close, action = onDetails)
                 HorizontalDivider(color = Pearl.Divider)
-                MenuItem("Delete", R.drawable.ic_close, close, danger = true, action = onDelete)
+                MenuItem(S.delete, R.drawable.ic_close, close, danger = true, action = onDelete)
             }
         }
     }
@@ -555,30 +554,30 @@ private fun MoveToDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Pearl.Card,
-        title = { Text("Move ${file.name}") },
+        title = { Text(S.moveX(file.name)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("To folder", style = MaterialTheme.typography.bodySmall)
+                Text(S.toFolder, style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(target, { target = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (storages.map { it.label to it.root } + listOf("This folder" to from, "PS5 homebrew" to "/data/homebrew",
-                        "USB homebrew" to "/mnt/usb0/homebrew"))
+                    (storages.map { it.label to it.root } + listOf(S.thisFolder to from, S.ps5Homebrew to "/data/homebrew",
+                        S.usbHomebrew to "/mnt/usb0/homebrew"))
                         .distinctBy { it.second }
                         .forEach { (label, root) ->
                             FilterChip(selected = target == root, onClick = { target = root }, label = { Text(label) })
                         }
                 }
-                Text("Moving to another drive copies everything, then removes the original.",
+                Text(S.moveNote,
                     style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
             TextButton(enabled = target.startsWith("/"), onClick = { onMove(target.trim()) }) {
-                Text("Move", fontWeight = FontWeight.SemiBold)
+                Text(S.move, fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
 }
 
@@ -600,29 +599,32 @@ private fun DetailsDialog(file: RemoteFile, fullPath: String, fs: RemoteFs?, onD
         title = { Text(file.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                DetailLine("Type", if (isHomebrew(file)) "Homebrew folder" else if (file.isDir) "Folder"
-                    else file.name.substringAfterLast('.', "").uppercase().ifEmpty { "File" } + " file")
-                DetailLine("Location", parentPath(fullPath))
+                DetailLine(S.type, when {
+                    isHomebrew(file) -> S.homebrewFolder
+                    file.isDir -> S.folder
+                    else -> file.name.substringAfterLast('.', "").uppercase().let { if (it.isEmpty()) S.file else S.fileOfType(it) }
+                })
+                DetailLine(S.location, parentPath(fullPath))
                 val d = details
                 when {
                     failed != null -> Text(failed!!, color = Pearl.Error, style = MaterialTheme.typography.bodySmall)
                     d == null -> PearlProgress(null)
                     else -> {
-                        DetailLine("Size", when {
-                            d.size < 0 -> "Unknown (needs PlayBeam Server)"
-                            else -> "${formatBytes(d.size)} (${"%,d".format(d.size)} bytes)"
+                        DetailLine(S.size, when {
+                            d.size < 0 -> S.sizeUnknown
+                            else -> "${formatBytes(d.size)} (${"%,d".format(d.size)} ${S.bytes})"
                         })
-                        if (d.isDir && d.size >= 0) DetailLine("Contains", "${d.files} files, ${d.dirs} folders")
+                        if (d.isDir && d.size >= 0) DetailLine(S.contains, S.containsLine(d.files, d.dirs))
                         d.mtime?.let {
                             val date = Date(it * 1000)
-                            DetailLine("Modified",
+                            DetailLine(S.modified,
                                 "${DateFormat.getMediumDateFormat(ctx).format(date)} ${DateFormat.getTimeFormat(ctx).format(date)}")
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
     )
 }
 
@@ -649,10 +651,10 @@ private fun NameDialog(
         containerColor = Pearl.Card,
         title = { Text(title) },
         text = {
-            OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") },
+            OutlinedTextField(text, { text = it }, singleLine = true, label = { Text(S.name) },
                 colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))
         },
         confirmButton = { TextButton(onClick = { onConfirm(text.trim()) }, enabled = valid) { Text(confirmLabel) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
 }

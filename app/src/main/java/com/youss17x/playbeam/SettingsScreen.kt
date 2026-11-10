@@ -4,7 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -43,47 +46,61 @@ fun SettingsScreen(state: AppState) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenTitle("Settings")
+        ScreenTitle(S.settings)
+
+        // ---- language ----
+        SectionLabel(S.secLanguage)
+        PearlCard {
+            Lang.entries.forEachIndexed { idx, l ->
+                SettingsRow(l.nativeName, divider = idx < Lang.entries.lastIndex,
+                    onClick = { I18n.set(ctx, l) },
+                    trailing = {
+                        if (I18n.lang == l) Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Pearl.Accent))
+                    })
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
 
         // ---- PS5 ----
-        SectionLabel("PS5")
+        SectionLabel(S.secPs5)
         ConsoleEditor(state)
 
         // ---- PlayBeam Server ----
         Spacer(Modifier.height(4.dp))
-        SectionLabel("PlayBeam Server")
+        SectionLabel(S.secServer)
         ServerCard(state)
 
         // ---- transfers ----
         Spacer(Modifier.height(4.dp))
-        SectionLabel("Transfers")
+        SectionLabel(S.secTransfers)
         PearlCard {
-            SettingsRow("Resume unfinished files",
-                subtitle = "Skip files already on the PS5, continue partial ones",
+            SettingsRow(S.resumeTitle,
+                subtitle = S.resumeSub,
                 trailing = { PearlSwitch(state.resume) { state.resume = it; state.save() } })
-            SettingsRow("Extract ZIPs on PS5",
-                subtitle = "Unzip uploaded .zip files, then delete the .zip (needs PlayBeam Server)",
+            SettingsRow(S.extractTitle,
+                subtitle = S.extractSub,
                 trailing = { PearlSwitch(state.extractZips) { state.extractZips = it; state.save() } })
-            SettingsRow("Connections", subtitle = "More is faster for many small files", divider = false,
+            SettingsRow(S.connections, subtitle = S.connectionsSub, divider = false,
                 trailing = { NumberPicker((1..4).toList(), state.connections) { state.connections = it; state.save() } })
         }
 
         // ---- downloads ----
         Spacer(Modifier.height(4.dp))
-        SectionLabel("Downloads")
+        SectionLabel(S.secDownloads)
         PearlCard {
-            SettingsRow("Phone download folder", downloadTree?.let { treeName(it) } ?: "Not chosen",
-                subtitle = "Where files downloaded from the PS5 are saved",
+            SettingsRow(S.downloadFolder, downloadTree?.let { treeName(it) } ?: S.notChosen,
+                subtitle = S.downloadFolderSub,
                 onClick = { pickDownloadFolder.launch(null) }, divider = false)
         }
 
         // ---- about ----
         Spacer(Modifier.height(4.dp))
-        SectionLabel("About")
+        SectionLabel(S.secAbout)
         PearlCard {
-            SettingsRow("Version", version)
-            SettingsRow("PlayBeam Server port", "$SERVER_PORT")
-            SettingsRow("Source code", "GitHub", divider = false, onClick = {
+            SettingsRow(S.version, version)
+            SettingsRow(S.serverPort, "$SERVER_PORT")
+            SettingsRow(S.sourceCode, "GitHub", divider = false, onClick = {
                 runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }
             }, trailing = { PIcon(R.drawable.ic_link, Pearl.Faint, 16.dp) })
         }

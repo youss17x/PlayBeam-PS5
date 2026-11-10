@@ -14,6 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,11 +33,16 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
         )
+        I18n.load(this)
         if (savedInstanceState == null) handleShareIntent(intent)
         setContent {
-            PearlTheme {
-                Surface(Modifier.fillMaxSize(), color = Pearl.Bg) {
-                    App(sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
+            // Arabic is shown right-to-left
+            val dir = if (I18n.lang.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+            CompositionLocalProvider(LocalLayoutDirection provides dir) {
+                PearlTheme {
+                    Surface(Modifier.fillMaxSize(), color = Pearl.Bg) {
+                        App(sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
+                    }
                 }
             }
         }
@@ -98,12 +105,21 @@ class AppState(private val ctx: Context) {
         .apply()
 }
 
-enum class Tab(val label: String, val icon: Int) {
-    Upload("Upload", R.drawable.ic_upload),
-    Files("Files", R.drawable.ic_folder),
-    Payload("Payload", R.drawable.ic_bolt),
-    History("History", R.drawable.ic_history),
-    Settings("Settings", R.drawable.ic_settings),
+enum class Tab(val icon: Int) {
+    Upload(R.drawable.ic_upload),
+    Files(R.drawable.ic_folder),
+    Payload(R.drawable.ic_bolt),
+    History(R.drawable.ic_history),
+    Settings(R.drawable.ic_settings);
+
+    val label: String
+        get() = when (this) {
+            Upload -> S.tabUpload
+            Files -> S.tabFiles
+            Payload -> S.tabPayload
+            History -> S.tabHistory
+            Settings -> S.tabSettings
+        }
 }
 
 @Composable
@@ -166,12 +182,12 @@ private fun FilesTab(state: AppState, goTo: (Tab) -> Unit) {
     if (state.host.isBlank()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            ScreenTitle("Files")
+            ScreenTitle(S.tabFiles)
             PearlCard {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("No PS5 set yet", style = MaterialTheme.typography.titleMedium)
-                    Text("Add your PS5 in Settings to browse its files.", style = MaterialTheme.typography.bodySmall)
-                    PrimaryButton("Open Settings", R.drawable.ic_settings, { goTo(Tab.Settings) })
+                    Text(S.noPs5Title, style = MaterialTheme.typography.titleMedium)
+                    Text(S.noPs5Body, style = MaterialTheme.typography.bodySmall)
+                    PrimaryButton(S.openSettings, R.drawable.ic_settings, { goTo(Tab.Settings) })
                 }
             }
         }
@@ -182,7 +198,7 @@ private fun FilesTab(state: AppState, goTo: (Tab) -> Unit) {
         port = state.portInt,
         startPath = state.filesPath,
         onPathChange = { state.filesPath = it },
-        pickLabel = "Upload here",
+        pickLabel = S.uploadHere,
         onPick = { state.remote = it; state.save(); goTo(Tab.Upload) },
         onClose = null,
     )

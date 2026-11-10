@@ -83,7 +83,7 @@ fun PayloadScreen(state: AppState) {
     fun send(p: RecentPayload) {
         val host = state.host.trim()
         if (host.isBlank()) {
-            statusOk = false; status = "Set your PS5 first in Settings (or use Find my PS5)."
+            statusOk = false; status = S.setPs5OrFind
             return
         }
         prefs.edit().putString("payloadPort", port).apply()
@@ -95,11 +95,11 @@ fun PayloadScreen(state: AppState) {
             try {
                 val size = PayloadSender.send(ctx, Uri.parse(p.uri), host, port.toIntOrNull() ?: 9021) { sendProgress = it }
                 statusOk = true
-                status = "✅ ${p.name} sent (${formatBytes(size.toLong())}) to $host:$port"
+                status = S.payloadSent(p.name, formatBytes(size.toLong()), host, port)
             } catch (e: Exception) {
                 statusOk = false
                 status = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
-                    else "❌ ${e.message ?: "Send failed"}. Is the payload loader running on the PS5?"
+                    else "❌ " + S.payloadFailed(e.message ?: S.sendFailed)
             }
             sending = null
         }
@@ -124,31 +124,31 @@ fun PayloadScreen(state: AppState) {
             Text("PlayBeam", style = MaterialTheme.typography.titleLarge)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ScreenTitle("Payload")
-            Text("Send any .elf / .bin payload to the PS5 loader. PlayBeam Server is in Settings.",
+            ScreenTitle(S.tabPayload)
+            Text(S.payloadIntro,
                 style = MaterialTheme.typography.bodySmall)
         }
 
 
         PearlCard {
-            SettingsRow("Console", state.host.trim().ifBlank { "Not set" })
-            SettingsRow("Loader port", divider = false, trailing = {
+            SettingsRow(S.console, state.host.trim().ifBlank { S.notSet })
+            SettingsRow(S.loaderPort, divider = false, trailing = {
                 OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true,
                     modifier = Modifier.width(96.dp), shape = RoundedCornerShape(12.dp),
                     colors = pearlFieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             })
         }
-        Text("The ELF loader usually listens on 9021; some .bin loaders use 9020.",
+        Text(S.loaderNote,
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
-        PrimaryButton("Choose a payload and send", R.drawable.ic_file, { pick.launch(arrayOf("*/*")) },
+        PrimaryButton(S.choosePayload, R.drawable.ic_file, { pick.launch(arrayOf("*/*")) },
             enabled = sending == null)
 
         if (sending != null) {
             PearlCard {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Sending $sending…", style = MaterialTheme.typography.titleSmall)
+                    Text(S.sendingX(sending ?: ""), style = MaterialTheme.typography.titleSmall)
                     PearlProgress(sendProgress)
                 }
             }
@@ -159,7 +159,7 @@ fun PayloadScreen(state: AppState) {
         }
 
         if (recent.isNotEmpty()) {
-            SectionLabel("Recent")
+            SectionLabel(S.recent)
             PearlCard {
                 recent.forEachIndexed { idx, p ->
                     Row(
@@ -171,7 +171,7 @@ fun PayloadScreen(state: AppState) {
                         Text(p.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         TextButton(onClick = { send(p) }, enabled = sending == null) {
-                            Text("Send", fontWeight = FontWeight.SemiBold)
+                            Text(S.send, fontWeight = FontWeight.SemiBold)
                         }
                         IconButton(onClick = {
                             recent = recent.filter { it.uri != p.uri }

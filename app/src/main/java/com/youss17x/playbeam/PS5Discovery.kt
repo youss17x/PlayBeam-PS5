@@ -36,11 +36,11 @@ fun onLocalNetwork(context: Context): Boolean {
 
 /** A clear message for network errors instead of the raw Java one. */
 fun friendlyError(context: Context, host: String, e: Throwable): String = when {
-    !onLocalNetwork(context) -> "Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5."
-    e is ServerError -> e.message ?: "PlayBeam Server error"
+    !onLocalNetwork(context) -> S.notOnWifi
+    e is ServerError -> e.message ?: S.serverErrorGeneric
     e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException ->
-        "Can't reach the PS5 at $host. Is it on, and is PlayBeam Server (or FTP) running?"
-    else -> e.message ?: "Something went wrong"
+        S.cantReach(host)
+    else -> e.message ?: S.somethingWrong
 }
 
 object PS5Discovery {
@@ -58,7 +58,7 @@ object PS5Discovery {
     }
 
     suspend fun scan(context: Context, onProgress: (Float) -> Unit): List<FoundDevice> = coroutineScope {
-        if (!onLocalNetwork(context)) throw IOException("Your phone isn't on Wi-Fi. Connect it to the same Wi-Fi as the PS5.")
+        if (!onLocalNetwork(context)) throw IOException(S.notOnWifi)
         val ip = localIpv4(context) ?: throw IOException("Not connected to Wi-Fi")
         val base = ip.substringBeforeLast('.')
         val own = ip.substringAfterLast('.').toInt()

@@ -6,6 +6,8 @@ An Android app to send files and folders from your phone to your PS5 over Wi-Fi 
 
 Five tabs: **Upload · Files · Payload · History · Settings**.
 
+Languages: **English**, **Français**, **العربية** (right-to-left) — Settings → Language.
+
 Clean, bright **Pearl** design: settings-style cards, one-tap console and destination sheets.
 
 **Upload**
@@ -54,6 +56,7 @@ To build locally, open the project in Android Studio and press **Run**.
 | `UploadScreen.kt` | Upload tab + destination sheet |
 | `SettingsScreen.kt` | Settings tab (PS5, transfers, downloads, about) |
 | `ConsoleEditor.kt` | Choosing the PS5 (saved consoles, Find my PS5, IP) |
+| `Strings.kt` | All texts in English, French and Arabic |
 | `Ui.kt` | Pearl theme (colors, type) and shared UI building blocks |
 | `BrowserScreen.kt` | PS5 file browser (incl. download to phone) |
 | `PayloadScreen.kt` | Payload sender |

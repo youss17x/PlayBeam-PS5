@@ -36,20 +36,19 @@ fun ServerCard(state: AppState) {
 
     fun startServer() {
         val host = state.host.trim()
-        if (host.isBlank()) { serverMsg = "Set your PS5 first in Settings."; return }
+        if (host.isBlank()) { serverMsg = S.setPs5InSettings; return }
         scope.launch {
-            serverBusy = "Sending PlayBeam Server…"; serverMsg = null
+            serverBusy = S.sendingServer; serverMsg = null
             try {
                 PayloadSender.sendBundledServer(ctx, host, loaderPort) { }
-                serverBusy = "Starting…"
+                serverBusy = S.starting
                 var up = false
                 repeat(8) { if (!up) { delay(1_000); up = ServerClient.isRunning(host) } }
                 serverUp = up
-                serverMsg = if (up) "✅ PlayBeam Server is running — uploads now use it automatically"
-                    else "Sent, but the server didn't answer. Check the PS5 notifications."
+                serverMsg = if (up) S.serverRunningMsg else S.serverNoAnswer
             } catch (e: Exception) {
                 serverMsg = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
-                    else "❌ ${e.message ?: "Send failed"}. Is the ELF loader running on port $loaderPort?"
+                    else "❌ " + S.loaderNotRunning(e.message ?: S.sendFailed, loaderPort)
             }
             serverBusy = null
         }
@@ -58,11 +57,11 @@ fun ServerCard(state: AppState) {
     fun stopServer() {
         val host = state.host.trim()
         scope.launch {
-            serverBusy = "Stopping…"
+            serverBusy = S.stopping
             runCatching { withContext(Dispatchers.IO) { ServerClient(host).use { it.shutdownServer() } } }
             delay(500)
             serverUp = ServerClient.isRunning(host)
-            serverMsg = if (serverUp == false) "PlayBeam Server stopped" else null
+            serverMsg = if (serverUp == false) S.serverStopped else null
             serverBusy = null
         }
     }
@@ -76,11 +75,11 @@ fun ServerCard(state: AppState) {
                 ) { PIcon(R.drawable.ic_bolt, Pearl.Accent, 24.dp) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("PlayBeam Server", style = MaterialTheme.typography.titleMedium)
-                    Text("Faster uploads · extracts ZIPs on the PS5", style = MaterialTheme.typography.bodySmall)
+                    Text(S.serverCardSub, style = MaterialTheme.typography.bodySmall)
                 }
                 when (serverUp) {
-                    true -> Chip("Running", Pearl.OkText, Pearl.OkSoft, Pearl.Ok)
-                    false -> Chip("Off", Pearl.Muted, Pearl.Track)
+                    true -> Chip(S.running, Pearl.OkText, Pearl.OkSoft, Pearl.Ok)
+                    false -> Chip(S.off, Pearl.Muted, Pearl.Track)
                     null -> Chip("…", Pearl.Muted, Pearl.Track)
                 }
             }
@@ -93,14 +92,14 @@ fun ServerCard(state: AppState) {
                     color = if (it.startsWith("❌")) Pearl.Error else Pearl.Muted)
             }
             if (serverUp == true) {
-                SecondaryButton("Stop server", R.drawable.ic_close, ::stopServer, Modifier.fillMaxWidth(),
+                SecondaryButton(S.stopServer, R.drawable.ic_close, ::stopServer, Modifier.fillMaxWidth(),
                     enabled = serverBusy == null)
             } else {
-                PrimaryButton("Start on PS5", R.drawable.ic_bolt, ::startServer, enabled = serverBusy == null,
+                PrimaryButton(S.startOnPs5, R.drawable.ic_bolt, ::startServer, enabled = serverBusy == null,
                     container = Pearl.Accent)
             }
         }
     }
-    Text("Started through the ELF loader on port $loaderPort (change it in the Payload tab).",
+    Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 }

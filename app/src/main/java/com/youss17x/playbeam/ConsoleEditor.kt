@@ -63,7 +63,7 @@ fun ConsoleEditor(state: AppState, onPicked: (() -> Unit)? = null) {
         }
 
         SecondaryButton(
-            if (scanning) "Searching… ${(scanProgress * 100).toInt()}%" else "Find my PS5",
+            if (scanning) S.searching((scanProgress * 100).toInt()) else S.findMyPs5,
             R.drawable.ic_search,
             onClick = {
                 scope.launch {
@@ -71,7 +71,7 @@ fun ConsoleEditor(state: AppState, onPicked: (() -> Unit)? = null) {
                     try {
                         found = PS5Discovery.scan(ctx) { scanProgress = it }
                     } catch (e: Exception) {
-                        scanError = e.message ?: "Search failed"
+                        scanError = e.message ?: S.searchFailed
                     }
                     scanning = false
                 }
@@ -83,7 +83,7 @@ fun ConsoleEditor(state: AppState, onPicked: (() -> Unit)? = null) {
         scanError?.let { Text(it, color = Pearl.Error, style = MaterialTheme.typography.bodyMedium) }
         found?.let { list ->
             if (list.isEmpty()) {
-                Text("No PS5 found. Make sure PlayBeam Server or an FTP server is running on your PS5 and both devices are on the same Wi-Fi.",
+                Text(S.noPs5Found,
                     style = MaterialTheme.typography.bodySmall)
             } else {
                 PearlCard {
@@ -101,32 +101,32 @@ fun ConsoleEditor(state: AppState, onPicked: (() -> Unit)? = null) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(state.host, { state.host = it; state.save() }, label = { Text("PS5 IP") },
+            OutlinedTextField(state.host, { state.host = it; state.save() }, label = { Text(S.ps5Ip) },
                 singleLine = true, modifier = Modifier.weight(2f), shape = RoundedCornerShape(14.dp),
                 colors = pearlFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             OutlinedTextField(state.port, { state.port = it.filter(Char::isDigit).take(5); state.save() },
-                label = { Text("FTP port") },
+                label = { Text(S.ftpPort) },
                 singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
                 colors = pearlFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
-        Text("PlayBeam Server always uses port $SERVER_PORT automatically. The FTP port is only used when the server isn't running (usually 2121).",
+        Text(S.portNote(SERVER_PORT),
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
-        SecondaryButton("Save this PS5", R.drawable.ic_plus, { saving = true }, Modifier.fillMaxWidth(),
+        SecondaryButton(S.saveThisPs5, R.drawable.ic_plus, { saving = true }, Modifier.fillMaxWidth(),
             enabled = state.host.isNotBlank())
     }
 
     if (saving) {
-        var name by remember { mutableStateOf(if (consoles.isEmpty()) "My PS5" else "PS5 ${consoles.size + 1}") }
+        var name by remember { mutableStateOf(if (consoles.isEmpty()) S.myPs5 else S.ps5N(consoles.size + 1)) }
         AlertDialog(
             onDismissRequest = { saving = false },
             containerColor = Pearl.Card,
-            title = { Text("Save this PS5") },
+            title = { Text(S.saveThisPs5) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${state.host.trim()}:${state.port}", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") },
+                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(S.name) },
                         colors = pearlFieldColors(), shape = RoundedCornerShape(14.dp))
                 }
             },
@@ -137,9 +137,9 @@ fun ConsoleEditor(state: AppState, onPicked: (() -> Unit)? = null) {
                     state.updateConsoles(
                         consoles.filter { it.name != c.name && !(it.host == c.host && it.port == c.port) } + c)
                     saving = false
-                }) { Text("Save") }
+                }) { Text(S.save) }
             },
-            dismissButton = { TextButton(onClick = { saving = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { saving = false }) { Text(S.cancel) } },
         )
     }
 }
@@ -154,9 +154,9 @@ fun ConsoleSheet(state: AppState, onDismiss: () -> Unit) {
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Console", style = MaterialTheme.typography.headlineSmall)
+            Text(S.console, style = MaterialTheme.typography.headlineSmall)
             ConsoleEditor(state, onPicked = onDismiss)
-            PrimaryButton("Done", null, { state.save(); onDismiss() })
+            PrimaryButton(S.done, null, { state.save(); onDismiss() })
         }
     }
 }

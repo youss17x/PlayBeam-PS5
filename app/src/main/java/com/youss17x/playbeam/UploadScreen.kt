@@ -28,7 +28,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
 /** Quick destinations: label to path. */
-private val PRESETS = listOf("PS5 · homebrew" to "/data/homebrew", "USB · homebrew" to "/mnt/usb0/homebrew")
+private val PRESETS get() = listOf(S.presetPs5 to "/data/homebrew", S.presetUsb to "/mnt/usb0/homebrew")
 
 @Composable
 fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
@@ -72,8 +72,8 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
         val uris = ArrayList(state.selected)
         val label = when {
             state.isTree -> treeName(uris[0])
-            uris.size == 1 -> displayName(ctx, uris[0]) ?: "1 file"
-            else -> "${uris.size} files"
+            uris.size == 1 -> displayName(ctx, uris[0]) ?: S.oneFile
+            else -> S.files(uris.size)
         }
         val i = serviceIntent()
             .putExtra(UploadService.EXTRA_LABEL, label)
@@ -107,13 +107,13 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
             Text("PlayBeam", style = MaterialTheme.typography.titleLarge, color = Pearl.Ink)
             Spacer(Modifier.weight(1f))
             when {
-                progress.running -> Chip("Sending", Pearl.Accent, Pearl.AccentSoft, Pearl.Accent)
-                state.host.isBlank() -> Chip("No PS5 set", Pearl.Muted, Pearl.Track)
+                progress.running -> Chip(S.chipSending, Pearl.Accent, Pearl.AccentSoft, Pearl.Accent)
+                state.host.isBlank() -> Chip(S.chipNoPs5, Pearl.Muted, Pearl.Track)
                 else -> Chip(currentConsole?.name ?: state.host.trim(), Pearl.OkText, Pearl.OkSoft, Pearl.Ok)
             }
         }
 
-        ScreenTitle("Send to PS5")
+        ScreenTitle(S.sendToPs5)
 
         // ---- selection ----
         PearlCard(
@@ -136,44 +136,44 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     val (title, sub) = when {
-                        state.selected.isEmpty() -> "Choose what to send" to "A folder or files from your phone"
-                        state.isTree -> treeName(state.selected[0]) to "Folder ready to send"
-                        state.selected.size == 1 -> (displayName(ctx, state.selected[0]) ?: "1 file") to "1 file ready to send"
-                        else -> "${state.selected.size} files" to "Ready to send"
+                        state.selected.isEmpty() -> S.chooseWhatTitle to S.chooseWhatSub
+                        state.isTree -> treeName(state.selected[0]) to S.folderReady
+                        state.selected.size == 1 -> (displayName(ctx, state.selected[0]) ?: S.oneFile) to S.oneFileReady
+                        else -> S.files(state.selected.size) to S.readyToSend
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium, color = Pearl.Ink,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(sub, style = MaterialTheme.typography.bodySmall)
                 }
-                Text(if (state.selected.isEmpty()) "Choose" else "Change",
+                Text(if (state.selected.isEmpty()) S.choose else S.change,
                     color = Pearl.Accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
         // ---- where & how ----
         PearlCard {
-            SettingsRow("Console", currentConsole?.name ?: state.host.trim().ifBlank { "Not set" },
+            SettingsRow(S.console, currentConsole?.name ?: state.host.trim().ifBlank { S.notSet },
                 onClick = { showConsole = true })
-            SettingsRow("Destination", state.remote.ifBlank { "/" }, onClick = { showDestination = true })
-            SettingsRow("Transfer", if (serverUp) "PlayBeam Server" else "FTP",
+            SettingsRow(S.destination, state.remote.ifBlank { "/" }, onClick = { showDestination = true })
+            SettingsRow(S.transfer, if (serverUp) "PlayBeam Server" else "FTP",
                 onClick = { goTo(Tab.Settings) },
-                subtitle = if (serverUp) "Fastest — server running on the PS5" else "Start PlayBeam Server in Settings for faster uploads")
+                subtitle = if (serverUp) S.transferFastSub else S.transferFtpSub)
             val options = listOfNotNull(
-                if (state.resume) "Resume" else null,
-                "${state.connections} conn.",
-                if (state.extractZips) "Unzip" else null,
+                if (state.resume) S.optResume else null,
+                S.optConn(state.connections),
+                if (state.extractZips) S.optUnzip else null,
             ).joinToString(" · ")
-            SettingsRow("Options", options, onClick = { goTo(Tab.Settings) }, divider = false)
+            SettingsRow(S.options, options, onClick = { goTo(Tab.Settings) }, divider = false)
         }
 
         PrimaryButton(
-            text = if (progress.running) "Add to queue" else "Upload to PS5",
+            text = if (progress.running) S.addToQueue else S.uploadToPs5,
             icon = if (progress.running) R.drawable.ic_plus else R.drawable.ic_upload,
             onClick = ::startUpload,
             enabled = state.selected.isNotEmpty() && state.host.isNotBlank(),
         )
         if (state.host.isBlank()) {
-            Text("Set your PS5 first: tap Console.", style = MaterialTheme.typography.bodySmall,
+            Text(S.setPs5First, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(start = 4.dp))
         }
 
@@ -182,7 +182,7 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
             PearlCard {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (progress.running) "NOW SENDING" else "LAST UPLOAD",
+                        Text(if (progress.running) S.nowSending else S.lastUpload,
                             style = MaterialTheme.typography.labelSmall, color = Pearl.Faint,
                             modifier = Modifier.weight(1f))
                         if (progress.running) Text("${formatBytes(progress.speedBytesPerSec)}/s",
@@ -193,9 +193,9 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
                     if (progress.running) {
                         PearlProgress(progress.fraction)
                         Row {
-                            Text("${(progress.fraction * 100).toInt()}% · ${formatBytes(progress.doneBytes)} of ${formatBytes(progress.totalBytes)}",
+                            Text(S.progressLine((progress.fraction * 100).toInt(), formatBytes(progress.doneBytes), formatBytes(progress.totalBytes)),
                                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                            Text("${progress.doneFiles} / ${progress.totalFiles} files", style = MaterialTheme.typography.bodySmall)
+                            Text(S.filesOf(progress.doneFiles, progress.totalFiles), style = MaterialTheme.typography.bodySmall)
                         }
                         if (progress.currentFile.isNotEmpty()) Text(progress.currentFile,
                             style = MaterialTheme.typography.bodySmall, color = Pearl.Faint,
@@ -205,9 +205,9 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
                         color = if (progress.message.startsWith("❌")) Pearl.Error else Pearl.Ink)
                     if (progress.running) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SecondaryButton("Stop", null, { ctx.startService(serviceIntent(UploadService.ACTION_STOP)) },
+                            SecondaryButton(S.stop, null, { ctx.startService(serviceIntent(UploadService.ACTION_STOP)) },
                                 Modifier.weight(1f))
-                            if (queue.isNotEmpty()) SecondaryButton("Stop all", null,
+                            if (queue.isNotEmpty()) SecondaryButton(S.stopAll, null,
                                 { ctx.startService(serviceIntent(UploadService.ACTION_STOP_ALL)) }, Modifier.weight(1f))
                         }
                     }
@@ -217,7 +217,7 @@ fun UploadScreen(state: AppState, goTo: (Tab) -> Unit) {
 
         // ---- queue ----
         if (queue.isNotEmpty()) {
-            SectionLabel("Waiting · ${queue.size}")
+            SectionLabel(S.waiting(queue.size))
             PearlCard {
                 queue.forEachIndexed { idx, j ->
                     SettingsRow(j.label, j.remote, divider = idx < queue.lastIndex, trailing = {
@@ -251,9 +251,9 @@ private fun ChooserSheet(onPick: (folder: Boolean) -> Unit, onDismiss: () -> Uni
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("What do you want to send?", style = MaterialTheme.typography.headlineSmall)
-            ChooserOption(R.drawable.ic_folder, "A folder", "Everything inside, subfolders too") { onPick(true) }
-            ChooserOption(R.drawable.ic_file, "Files", "Pick one or several files") { onPick(false) }
+            Text(S.whatToSend, style = MaterialTheme.typography.headlineSmall)
+            ChooserOption(R.drawable.ic_folder, S.aFolder, S.aFolderSub) { onPick(true) }
+            ChooserOption(R.drawable.ic_file, S.filesOpt, S.filesOptSub) { onPick(false) }
         }
     }
 }
@@ -285,11 +285,11 @@ private fun DestinationSheet(state: AppState, onBrowse: () -> Unit, onDismiss: (
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Destination", style = MaterialTheme.typography.headlineSmall)
-            OutlinedTextField(state.remote, { state.remote = it }, label = { Text("Path on PS5") },
+            Text(S.destination, style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(state.remote, { state.remote = it }, label = { Text(S.pathOnPs5) },
                 singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
                 colors = pearlFieldColors())
-            SectionLabel("Quick picks")
+            SectionLabel(S.quickPicks)
             PearlCard {
                 PRESETS.forEachIndexed { idx, (label, p) ->
                     SettingsRow(label, divider = idx < PRESETS.lastIndex, onClick = { state.remote = p },
@@ -300,9 +300,9 @@ private fun DestinationSheet(state: AppState, onBrowse: () -> Unit, onDismiss: (
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton("Browse PS5", R.drawable.ic_folder, { state.save(); onBrowse() }, Modifier.weight(1f),
+                SecondaryButton(S.browsePs5, R.drawable.ic_folder, { state.save(); onBrowse() }, Modifier.weight(1f),
                     enabled = state.host.isNotBlank())
-                PrimaryButton("Done", null, { state.save(); onDismiss() }, Modifier.weight(1f).height(48.dp))
+                PrimaryButton(S.done, null, { state.save(); onDismiss() }, Modifier.weight(1f).height(48.dp))
             }
         }
     }
