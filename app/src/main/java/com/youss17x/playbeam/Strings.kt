@@ -148,6 +148,20 @@ abstract class Strings {
     abstract val serverCardSub: String
     abstract val running: String
     abstract val off: String
+    abstract val pkgTitle: String
+    abstract val pkgSub: String
+    abstract val choosePkg: String
+    abstract val pkgNotPkg: String
+    abstract val pkgStarting: String
+    abstract val pkgServing: String
+    abstract fun pkgServingShort(pct: Int): String
+    abstract fun pkgProgress(pct: Int, done: String, total: String): String
+    abstract val pkgDone: String
+    abstract val pkgStalled: String
+    abstract val pkgNoWifi: String
+    abstract fun pkgDpiUnreachable(port: Int): String
+    abstract fun pkgDpiError(code: String): String
+    abstract val pkgChannel: String
     abstract val pinTitle: String
     abstract val addTile: String
     abstract val tileSent: String
@@ -442,6 +456,20 @@ object En : Strings() {
     override val tileAtBoot = "✅ Ready. Restart the PS5 and open YouTube (Y2JB) as usual: the PlayBeam tile is added during that boot, then your autoload.txt is put back as it was."
     override val tileNoAutoloader = "No /data/ps5_autoloader/autoload.txt on this PS5, so nothing was changed."
     override val tileSent = "Sent. A PlayBeam tile should appear on the PS5 home screen (look in Media). It opens the PlayBeam Server page — keep the server running."
+    override val pkgTitle = "Install a PKG"
+    override val pkgSub = "Installs a .pkg from this phone straight onto the PS5 — no copy first. Needs etaHEN with the Direct PKG Installer (DPI) on: etaHEN toolbox → Services → Direct PKG Installer (port 9090). Keep PlayBeam open until it's done."
+    override val choosePkg = "Choose a PKG"
+    override val pkgNotPkg = "Choose a .pkg file"
+    override val pkgStarting = "Starting…"
+    override val pkgServing = "Installing on the PS5 — it downloads the PKG from this phone. Watch the PS5 notifications."
+    override fun pkgServingShort(pct: Int) = "Sending to the PS5 installer — $pct%"
+    override fun pkgProgress(pct: Int, done: String, total: String) = "$pct% · $done of $total"
+    override val pkgDone = "✅ The PS5 received the whole PKG. Installation finishes on the PS5 (see its Downloads / notifications)."
+    override val pkgStalled = "The PS5 stopped downloading before the end. Check the PS5 notifications, then try again."
+    override val pkgNoWifi = "Connect this phone to the same Wi-Fi as the PS5"
+    override fun pkgDpiUnreachable(port: Int) = "The Direct PKG Installer isn't answering on port $port. Turn it on in the etaHEN toolbox (Services → Direct PKG Installer)."
+    override fun pkgDpiError(code: String) = "The PS5 installer refused the PKG (error $code)."
+    override val pkgChannel = "PKG installs"
     override val pinTitle = "PIN protection"
     override val pinSub = "Only phones that know the PIN can use PlayBeam Server"
     override val pinOn = "On"
@@ -721,6 +749,20 @@ object Fr : Strings() {
     override val tileAtBoot = "✅ Prêt. Redémarrez la PS5 et lancez YouTube (Y2JB) comme d'habitude : la vignette PlayBeam est ajoutée pendant ce démarrage, puis votre autoload.txt est remis comme avant."
     override val tileNoAutoloader = "Pas de /data/ps5_autoloader/autoload.txt sur cette PS5 : rien n'a été modifié."
     override val tileSent = "Envoyé. Une vignette PlayBeam devrait apparaître sur l'écran d'accueil de la PS5 (dans Multimédia). Elle ouvre la page de PlayBeam Server — gardez le serveur lancé."
+    override val pkgTitle = "Installer un PKG"
+    override val pkgSub = "Installe un .pkg depuis ce téléphone directement sur la PS5 — sans le copier d'abord. Nécessite etaHEN avec le Direct PKG Installer (DPI) activé : boîte à outils etaHEN → Services → Direct PKG Installer (port 9090). Gardez PlayBeam ouvert jusqu'à la fin."
+    override val choosePkg = "Choisir un PKG"
+    override val pkgNotPkg = "Choisissez un fichier .pkg"
+    override val pkgStarting = "Démarrage…"
+    override val pkgServing = "Installation sur la PS5 — elle télécharge le PKG depuis ce téléphone. Regardez les notifications de la PS5."
+    override fun pkgServingShort(pct: Int) = "Envoi à l'installateur de la PS5 — $pct %"
+    override fun pkgProgress(pct: Int, done: String, total: String) = "$pct % · $done sur $total"
+    override val pkgDone = "✅ La PS5 a reçu tout le PKG. L'installation se termine sur la PS5 (voir Téléchargements / notifications)."
+    override val pkgStalled = "La PS5 a arrêté le téléchargement avant la fin. Vérifiez ses notifications, puis réessayez."
+    override val pkgNoWifi = "Connectez ce téléphone au même Wi-Fi que la PS5"
+    override fun pkgDpiUnreachable(port: Int) = "Le Direct PKG Installer ne répond pas sur le port $port. Activez-le dans la boîte à outils etaHEN (Services → Direct PKG Installer)."
+    override fun pkgDpiError(code: String) = "L'installateur de la PS5 a refusé le PKG (erreur $code)."
+    override val pkgChannel = "Installations PKG"
     override val pinTitle = "Protection par PIN"
     override val pinSub = "Seuls les téléphones qui connaissent le PIN peuvent utiliser PlayBeam Server"
     override val pinOn = "Activé"
@@ -1005,6 +1047,20 @@ object Ar : Strings() {
     override val tileAtBoot = "✅ جاهز. أعد تشغيل الـ PS5 وافتح YouTube (Y2JB) كالعادة: تُضاف أيقونة PlayBeam أثناء هذا الإقلاع، ثم يرجع ملف autoload.txt كما كان."
     override val tileNoAutoloader = "لا يوجد /data/ps5_autoloader/autoload.txt في هذا الـ PS5، فلم يتغير شيء."
     override val tileSent = "تم الإرسال. يجب أن تظهر أيقونة PlayBeam على الشاشة الرئيسية للـ PS5 (في قسم الوسائط). تفتح صفحة PlayBeam Server — أبقِ السيرفر شغّالاً."
+    override val pkgTitle = "تثبيت PKG"
+    override val pkgSub = "يثبّت ملف ‎.pkg من هذا الهاتف مباشرة على الـ PS5 — بدون نسخه أولاً. يحتاج etaHEN مع تفعيل Direct PKG Installer (DPI): أدوات etaHEN ← Services ← Direct PKG Installer (المنفذ 9090). أبقِ PlayBeam مفتوحاً حتى ينتهي."
+    override val choosePkg = "اختيار ملف PKG"
+    override val pkgNotPkg = "اختر ملفاً بصيغة ‎.pkg"
+    override val pkgStarting = "جارٍ البدء…"
+    override val pkgServing = "جارٍ التثبيت على الـ PS5 — يحمّل الـ PS5 الملف من هذا الهاتف. راقب إشعارات الـ PS5."
+    override fun pkgServingShort(pct: Int) = "يُرسل إلى مثبّت الـ PS5 — $pct%"
+    override fun pkgProgress(pct: Int, done: String, total: String) = "$pct% · $done من $total"
+    override val pkgDone = "✅ استلم الـ PS5 الملف كاملاً. يكتمل التثبيت على الـ PS5 (راجع التنزيلات / الإشعارات)."
+    override val pkgStalled = "توقف الـ PS5 عن التحميل قبل النهاية. راجع إشعارات الـ PS5 ثم حاول من جديد."
+    override val pkgNoWifi = "صِل هذا الهاتف بنفس شبكة الواي فاي التي عليها الـ PS5"
+    override fun pkgDpiUnreachable(port: Int) = "Direct PKG Installer لا يرد على المنفذ $port. فعّله من أدوات etaHEN (Services ← Direct PKG Installer)."
+    override fun pkgDpiError(code: String) = "رفض مثبّت الـ PS5 الملف (الخطأ $code)."
+    override val pkgChannel = "تثبيت PKG"
     override val pinTitle = "الحماية برمز PIN"
     override val pinSub = "فقط الهواتف التي تعرف الرمز تستطيع استعمال PlayBeam Server"
     override val pinOn = "مفعّل"

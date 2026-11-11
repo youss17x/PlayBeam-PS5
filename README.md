@@ -33,6 +33,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - **Parallel uploads**: 1–4 connections at once — much faster for folders with many small files
 - **PlayBeam on the PS5 home screen**: PlayBeam Server adds a PlayBeam tile that opens its page on your TV — a QR code to connect the app and live transfer progress
 - **PIN protection**: lock PlayBeam Server with a PIN so other phones on your Wi-Fi can't use it
+- **Install PKGs from the phone**: send a .pkg straight to etaHEN's Direct PKG Installer — the PS5 downloads it from your phone, no copy first
 - **Split big files**: with PlayBeam Server, files over 64 MB are sent in pieces over all connections
   at once (on the PS5's internal drive; USB drives get one piece at a time)
 - **Upload queue**: add more uploads while one is running; remove or stop them any time

@@ -332,6 +332,8 @@ fun PayloadScreen(state: AppState) {
                 color = if (statusOk) Pearl.OkText else Pearl.Error)
         }
 
+        PkgCard(state)
+
         if (recent.isNotEmpty()) {
             SectionLabel(S.recent)
             PearlCard {
@@ -363,6 +365,60 @@ fun PayloadScreen(state: AppState) {
                     }
                     if (idx < recent.lastIndex) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 16.dp))
                 }
+            }
+        }
+    }
+}
+
+
+/** Install a PKG from the phone through etaHEN's Direct PKG Installer. */
+@Composable
+private fun PkgCard(state: AppState) {
+    val ctx = LocalContext.current
+    val info by PkgState.state.collectAsState()
+    val busy = info.phase == PkgState.Phase.STARTING || info.phase == PkgState.Phase.SERVING
+    val pickPkg = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val host = state.host.trim()
+        if (host.isBlank()) { PkgState.flow.value = PkgState.Info(PkgState.Phase.ERROR, message = S.setPs5OrFind); return@rememberLauncherForActivityResult }
+        var name = "game.pkg"
+        var size = -1L
+        ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                c.getString(0)?.let { name = it }
+                if (!c.isNull(1)) size = c.getLong(1)
+            }
+        }
+        if (!name.endsWith(".pkg", true)) {
+            PkgState.flow.value = PkgState.Info(PkgState.Phase.ERROR, message = S.pkgNotPkg); return@rememberLauncherForActivityResult
+        }
+        PkgInstallService.start(ctx, uri, name, size, host)
+    }
+
+    SectionLabel(S.pkgTitle)
+    PearlCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(S.pkgSub, style = MaterialTheme.typography.bodySmall)
+            if (info.phase != PkgState.Phase.IDLE && info.name.isNotEmpty()) {
+                Text(info.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (busy) {
+                PearlProgress(if (info.phase == PkgState.Phase.STARTING || info.size <= 0) null else info.progress)
+                if (info.size > 0) Text(S.pkgProgress((info.progress * 100).toInt(), formatBytes(info.served), formatBytes(info.size)),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            info.message?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium,
+                    color = when (info.phase) {
+                        PkgState.Phase.ERROR -> Pearl.Error
+                        PkgState.Phase.DONE -> Pearl.OkText
+                        else -> Pearl.Muted
+                    })
+            }
+            if (busy) {
+                SecondaryButton(S.stop, R.drawable.ic_close, { PkgInstallService.stop(ctx) }, Modifier.fillMaxWidth())
+            } else {
+                PrimaryButton(S.choosePkg, R.drawable.ic_file, { PkgState.reset(); pickPkg.launch(arrayOf("*/*")) })
             }
         }
     }
