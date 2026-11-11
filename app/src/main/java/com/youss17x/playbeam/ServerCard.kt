@@ -149,29 +149,50 @@ fun ServerCard(state: AppState) {
     Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
-    // PlayBeam tile on the PS5 home screen (opens the server page in the PS5 browser).
-    // Hidden until the installer works on real consoles.
-    if (SHOW_HOME_TILE) {
-    var tileMsg by remember { mutableStateOf<String?>(null) }
-    var tileBusy by remember { mutableStateOf(false) }
-    SecondaryButton(S.addTile, R.drawable.ic_plus, {
-        val host = state.host.trim()
-        if (host.isBlank()) { tileMsg = S.setPs5InSettings; return@SecondaryButton }
-        scope.launch {
-            tileBusy = true; tileMsg = null
-            tileMsg = try {
-                val out = PayloadSender.sendTileInstaller(ctx, host, loaderPort)
-                S.tileSent + if (out.isNotBlank()) "\n\n" + out.takeLast(1500) else ""
-            } catch (e: Exception) {
-                "❌ " + S.loaderNotRunning(e.message ?: S.sendFailed, loaderPort)
+    // PlayBeam tile on the PS5 home screen: installed once at the next boot by the Y2JB autoloader
+    // (payloads sent through the ELF loader can't use the PS5 app installer)
+    if (serverUp == true) {
+        var tileMsg by remember { mutableStateOf<String?>(null) }
+        var tileBusy by remember { mutableStateOf(false) }
+        SecondaryButton(S.addTile, R.drawable.ic_plus, {
+            scope.launch {
+                tileBusy = true; tileMsg = null
+                tileMsg = try {
+                    if (PayloadSender.scheduleTileAtBoot(ctx, state.host.trim())) S.tileAtBoot else "❌ " + S.tileNoAutoloader
+                } catch (e: PinError) {
+                    "❌ " + e.message
+                } catch (e: Exception) {
+                    "❌ " + (e.message ?: S.sendFailed)
+                }
+                tileBusy = false
             }
-            tileBusy = false
+        }, Modifier.fillMaxWidth(), enabled = !tileBusy)
+        tileMsg?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp),
+                color = if (it.startsWith("❌")) Pearl.Error else Pearl.OkText)
         }
-    }, Modifier.fillMaxWidth(), enabled = !tileBusy)
-    tileMsg?.let {
-        Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp),
-            color = if (it.startsWith("❌")) Pearl.Error else Pearl.Muted)
-    }
+        // a change still waiting in the autoloader (or left behind): offer to put it back
+        var pending by remember { mutableStateOf(false) }
+        LaunchedEffect(tileMsg, serverUp) {
+            pending = withContext(Dispatchers.IO) {
+                runCatching { ServerClient(state.host.trim()).use { it.size(TILE_BACKUP) >= 0 } }.getOrDefault(false)
+            }
+        }
+        if (pending) {
+            SecondaryButton(S.tileUndo, R.drawable.ic_close, {
+                scope.launch {
+                    tileMsg = try {
+                        withContext(Dispatchers.IO) {
+                            ServerClient(state.host.trim()).use { c ->
+                                c.rename(TILE_BACKUP, "/data/ps5_autoloader/autoload.txt")
+                                runCatching { c.rm("/data/ps5_autoloader/playbeam-tile.elf") }
+                            }
+                        }
+                        S.tileUndone
+                    } catch (e: Exception) { "❌ " + (e.message ?: S.sendFailed) }
+                }
+            }, Modifier.fillMaxWidth())
+        }
     }
 
     if (serverUp == true) {
@@ -222,5 +243,4 @@ fun ServerCard(state: AppState) {
     }
 }
 
-/** The home screen tile installer is not reliable yet. */
-private const val SHOW_HOME_TILE = false
+private const val TILE_BACKUP = "/data/ps5_autoloader/autoload.txt.playbeam-backup"

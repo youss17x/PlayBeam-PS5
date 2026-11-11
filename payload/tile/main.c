@@ -9,11 +9,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <ps5/kernel.h>
 
 #define TITLE_ID "PLBM00001"
 #define APP_DIR "/user/app/" TITLE_ID
+#define AUTOLOAD_DIR "/data/ps5_autoloader"
+#define AUTOLOAD_TXT AUTOLOAD_DIR "/autoload.txt"
+#define AUTOLOAD_BAK AUTOLOAD_DIR "/autoload.txt.playbeam-backup"
+#define SELF_ELF AUTOLOAD_DIR "/playbeam-tile.elf"
 
 #define INCASSET(name, file)                                                   \
   __asm__(".section .rodata\n"                                                 \
@@ -67,7 +72,16 @@ static int write_file(const char *path, const uint8_t *data, size_t size) {
   return (fclose(f) == 0 && ok) ? 0 : -1;
 }
 
+/* The app put this installer in the Y2JB autoloader for one boot (with a backup of
+   autoload.txt): put autoload.txt back and remove the installer, whatever happened. */
+static void undo_autoload(void) {
+  struct stat st;
+  if (stat(AUTOLOAD_BAK, &st) == 0) rename(AUTOLOAD_BAK, AUTOLOAD_TXT);
+  unlink(SELF_ELF);
+}
+
 int main(void) {
+  undo_autoload();
   char msg[128];
   printf("playbeam-tile: started\n");
   fflush(stdout);

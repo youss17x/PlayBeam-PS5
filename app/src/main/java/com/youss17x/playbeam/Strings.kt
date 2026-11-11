@@ -151,6 +151,10 @@ abstract class Strings {
     abstract val pinTitle: String
     abstract val addTile: String
     abstract val tileSent: String
+    abstract val tileAtBoot: String
+    abstract val tileUndo: String
+    abstract val tileUndone: String
+    abstract val tileNoAutoloader: String
     abstract fun linkedTo(host: String): String
     abstract fun webPageNote(host: String): String
     abstract val pinSub: String
@@ -433,6 +437,10 @@ object En : Strings() {
     override fun linkedTo(host: String) = "Connected to the PS5 at $host"
     override fun webPageNote(host: String) = "On the PS5, open http://127.0.0.1:9116 in a web browser to see a QR code and the transfer progress on your TV (or http://$host:9116 from any device)."
     override val addTile = "Add PlayBeam to the PS5 home screen"
+    override val tileUndo = "Undo the autoloader change"
+    override val tileUndone = "✅ autoload.txt is back as it was."
+    override val tileAtBoot = "✅ Ready. Restart the PS5 and open YouTube (Y2JB) as usual: the PlayBeam tile is added during that boot, then your autoload.txt is put back as it was."
+    override val tileNoAutoloader = "No /data/ps5_autoloader/autoload.txt on this PS5, so nothing was changed."
     override val tileSent = "Sent. A PlayBeam tile should appear on the PS5 home screen (look in Media). It opens the PlayBeam Server page — keep the server running."
     override val pinTitle = "PIN protection"
     override val pinSub = "Only phones that know the PIN can use PlayBeam Server"
@@ -708,6 +716,10 @@ object Fr : Strings() {
     override fun linkedTo(host: String) = "Connecté à la PS5 ($host)"
     override fun webPageNote(host: String) = "Sur la PS5, ouvrez http://127.0.0.1:9116 dans un navigateur pour voir un QR code et la progression des transferts sur la TV (ou http://$host:9116 depuis n'importe quel appareil)."
     override val addTile = "Ajouter PlayBeam à l'écran d'accueil PS5"
+    override val tileUndo = "Annuler la modification de l'autoloader"
+    override val tileUndone = "✅ autoload.txt est revenu comme avant."
+    override val tileAtBoot = "✅ Prêt. Redémarrez la PS5 et lancez YouTube (Y2JB) comme d'habitude : la vignette PlayBeam est ajoutée pendant ce démarrage, puis votre autoload.txt est remis comme avant."
+    override val tileNoAutoloader = "Pas de /data/ps5_autoloader/autoload.txt sur cette PS5 : rien n'a été modifié."
     override val tileSent = "Envoyé. Une vignette PlayBeam devrait apparaître sur l'écran d'accueil de la PS5 (dans Multimédia). Elle ouvre la page de PlayBeam Server — gardez le serveur lancé."
     override val pinTitle = "Protection par PIN"
     override val pinSub = "Seuls les téléphones qui connaissent le PIN peuvent utiliser PlayBeam Server"
@@ -988,6 +1000,10 @@ object Ar : Strings() {
     override fun linkedTo(host: String) = "تم الاتصال بالـ PS5 على $host"
     override fun webPageNote(host: String) = "على الـ PS5 افتح http://127.0.0.1:9116 في متصفح لترى رمز QR وتقدّم النقل على التلفاز (أو http://$host:9116 من أي جهاز)."
     override val addTile = "إضافة PlayBeam إلى الشاشة الرئيسية للـ PS5"
+    override val tileUndo = "إلغاء التعديل على الـ autoloader"
+    override val tileUndone = "✅ رجع autoload.txt كما كان."
+    override val tileAtBoot = "✅ جاهز. أعد تشغيل الـ PS5 وافتح YouTube (Y2JB) كالعادة: تُضاف أيقونة PlayBeam أثناء هذا الإقلاع، ثم يرجع ملف autoload.txt كما كان."
+    override val tileNoAutoloader = "لا يوجد /data/ps5_autoloader/autoload.txt في هذا الـ PS5، فلم يتغير شيء."
     override val tileSent = "تم الإرسال. يجب أن تظهر أيقونة PlayBeam على الشاشة الرئيسية للـ PS5 (في قسم الوسائط). تفتح صفحة PlayBeam Server — أبقِ السيرفر شغّالاً."
     override val pinTitle = "الحماية برمز PIN"
     override val pinSub = "فقط الهواتف التي تعرف الرمز تستطيع استعمال PlayBeam Server"
