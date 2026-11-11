@@ -169,6 +169,13 @@ abstract class Strings {
     abstract fun sendingX(name: String): String
     abstract val recent: String
     abstract fun payloadSent(name: String, size: String, host: String, port: String): String
+    abstract val saveToPldmgr: String
+    abstract val removeFromList: String
+    abstract fun pldmgrSaved(name: String): String
+    abstract fun pldmgrReplaceQ(name: String): String
+    abstract val pldmgrReplaceBody: String
+    abstract val replace: String
+    abstract val pldmgrNote: String
     abstract fun payloadFailed(msg: String): String
     abstract val setPs5OrFind: String
 
@@ -416,6 +423,13 @@ object En : Strings() {
     override fun sendingX(name: String) = "Sending $name…"
     override val recent = "Recent"
     override fun payloadSent(name: String, size: String, host: String, port: String) = "✅ $name sent ($size) to $host:$port"
+    override val saveToPldmgr = "Save to Payload Manager"
+    override val removeFromList = "Remove from list"
+    override fun pldmgrSaved(name: String) = "✅ $name saved to Payload Manager — press △ (Reload) there to see it"
+    override fun pldmgrReplaceQ(name: String) = "Replace $name?"
+    override val pldmgrReplaceBody = "Payload Manager already has this payload. Its file will be replaced with the new one."
+    override val replace = "Replace"
+    override val pldmgrNote = "Send runs a payload once. Save to Payload Manager (⋮) keeps it in Payload Manager's list on the PS5."
     override fun payloadFailed(msg: String) = "$msg. Is the payload loader running on the PS5?"
     override val setPs5OrFind = "Set your PS5 first in Settings (or use Find my PS5)."
 
@@ -657,6 +671,13 @@ object Fr : Strings() {
     override fun sendingX(name: String) = "Envoi de $name…"
     override val recent = "Récents"
     override fun payloadSent(name: String, size: String, host: String, port: String) = "✅ $name envoyé ($size) à $host:$port"
+    override val saveToPldmgr = "Enregistrer dans Payload Manager"
+    override val removeFromList = "Retirer de la liste"
+    override fun pldmgrSaved(name: String) = "✅ $name enregistré dans Payload Manager — appuyez sur △ (Recharger) pour le voir"
+    override fun pldmgrReplaceQ(name: String) = "Remplacer $name ?"
+    override val pldmgrReplaceBody = "Payload Manager contient déjà ce payload. Son fichier sera remplacé par le nouveau."
+    override val replace = "Remplacer"
+    override val pldmgrNote = "Envoyer lance un payload une fois. Enregistrer dans Payload Manager (⋮) le garde dans la liste de Payload Manager sur la PS5."
     override fun payloadFailed(msg: String) = "$msg. Le chargeur de payload tourne-t-il sur la PS5 ?"
     override val setPs5OrFind = "Configurez d'abord votre PS5 dans Réglages (ou utilisez Trouver ma PS5)."
 
@@ -903,6 +924,13 @@ object Ar : Strings() {
     override fun sendingX(name: String) = "جارٍ إرسال $name…"
     override val recent = "الأخيرة"
     override fun payloadSent(name: String, size: String, host: String, port: String) = "✅ تم إرسال $name ($size) إلى $host:$port"
+    override val saveToPldmgr = "حفظ في Payload Manager"
+    override val removeFromList = "إزالة من القائمة"
+    override fun pldmgrSaved(name: String) = "✅ تم حفظ $name في Payload Manager — اضغط △ (إعادة تحميل) هناك لتراه"
+    override fun pldmgrReplaceQ(name: String) = "استبدال $name؟"
+    override val pldmgrReplaceBody = "هذا الـ payload موجود في Payload Manager. سيُستبدل ملفه بالملف الجديد."
+    override val replace = "استبدال"
+    override val pldmgrNote = "«إرسال» يشغّل الـ payload مرة واحدة. «حفظ في Payload Manager» (⋮) يضيفه إلى قائمة Payload Manager على الـ PS5."
     override fun payloadFailed(msg: String) = "$msg. هل الـ payload loader يعمل على PS5؟"
     override val setPs5OrFind = "حدد جهاز PS5 أولاً من الإعدادات (أو استخدم ابحث عن جهازي)."
 

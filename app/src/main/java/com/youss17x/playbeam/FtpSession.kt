@@ -44,6 +44,8 @@ interface RemoteFs {
     suspend fun details(path: String, isDir: Boolean): RemoteDetails
     /** Total and free bytes, or null if unknown. */
     suspend fun freeSpace(path: String): Pair<Long, Long>?
+    /** Writes a small file, creating its parent folders. */
+    suspend fun writeFile(path: String, bytes: ByteArray)
 }
 
 /** Creates a file in a phone folder (SAF document), guessing its type from the name. */
@@ -92,6 +94,15 @@ class FtpSession(private val host: String, private val port: Int) : RemoteFs {
     }
 
     override suspend fun freeSpace(path: String): Pair<Long, Long>? = null
+
+    override suspend fun writeFile(path: String, bytes: ByteArray) = io {
+        // create each parent folder; existing ones just fail quietly
+        val parts = path.trim('/').split('/').dropLast(1)
+        var dir = ""
+        for (p in parts) { dir += "/$p"; makeDirectory(dir) }
+        setFileType(org.apache.commons.net.ftp.FTP.BINARY_FILE_TYPE)
+        if (!storeFile(path, java.io.ByteArrayInputStream(bytes))) throw IOException("Can't write $path: ${replyString.trim()}")
+    }
     private val ftp = FTPClient()
     private val mutex = Mutex()
 

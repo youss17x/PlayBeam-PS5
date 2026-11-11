@@ -523,7 +523,7 @@ private fun FileRow(
 }
 
 @Composable
-private fun MenuItem(
+internal fun MenuItem(
     text: String,
     icon: Int,
     close: () -> Unit,

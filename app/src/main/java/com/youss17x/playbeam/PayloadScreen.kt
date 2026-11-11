@@ -29,6 +29,46 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 
+/**
+ * Keeps a payload in itsPLK's Payload Manager: /data/pldmgr/payloads/<name>/<file>.
+ * Uses PlayBeam Server when it runs, otherwise FTP.
+ */
+object PayloadManagerStore {
+    const val ROOT = "/data/pldmgr/payloads"
+
+    fun folderName(fileName: String) = fileName.substringBeforeLast('.')
+        .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifBlank { "payload" }
+
+    private suspend fun session(host: String, ftpPort: Int): RemoteFs =
+        if (ServerClient.isRunning(host)) ServerSession(host) else FtpSession(host, ftpPort)
+
+    /** True if Payload Manager already has a folder with this name. */
+    suspend fun exists(host: String, ftpPort: Int, fileName: String): Boolean {
+        val s = session(host, ftpPort)
+        return try {
+            runCatching { s.list(ROOT).any { it.isDir && it.name == folderName(fileName) } }.getOrDefault(false)
+        } finally { s.closeAsync() }
+    }
+
+    suspend fun save(ctx: Context, uri: Uri, fileName: String, host: String, ftpPort: Int) {
+        val bytes = withContext(Dispatchers.IO) {
+            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } ?: throw IOException("Can't read the payload file")
+        if (bytes.isEmpty()) throw IOException("The payload file is empty")
+        val dir = "$ROOT/${folderName(fileName)}"
+        val s = session(host, ftpPort)
+        try {
+            // replace older payload files in the folder, keep Payload Manager's own files (icon, settings)
+            runCatching {
+                s.list(dir).filter { !it.isDir && it.name != fileName &&
+                    (it.name.endsWith(".elf", true) || it.name.endsWith(".bin", true)) }
+                    .forEach { s.deletePath("$dir/${it.name}", false) }
+            }
+            s.writeFile("$dir/$fileName", bytes)
+        } finally { s.closeAsync() }
+    }
+}
+
 /** Sends an .elf / .bin payload to the PS5 payload loader over a raw TCP socket. */
 object PayloadSender {
     suspend fun send(ctx: Context, uri: Uri, host: String, port: Int, onProgress: (Float) -> Unit): Int {
@@ -79,6 +119,49 @@ fun PayloadScreen(state: AppState) {
     var sendProgress by remember { mutableFloatStateOf(0f) }
     var status by remember { mutableStateOf<String?>(null) }
     var statusOk by remember { mutableStateOf(true) }
+
+    var confirmReplace by remember { mutableStateOf<RecentPayload?>(null) }
+
+    fun doSave(p: RecentPayload) {
+        val host = state.host.trim()
+        scope.launch {
+            sending = p.name; sendProgress = 0f; status = null
+            try {
+                PayloadManagerStore.save(ctx, Uri.parse(p.uri), p.name, host, state.portInt)
+                statusOk = true
+                status = S.pldmgrSaved(p.name)
+            } catch (e: Exception) {
+                statusOk = false
+                status = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
+                    else "❌ " + (e.message ?: S.sendFailed)
+            }
+            sending = null
+        }
+    }
+
+    fun saveToManager(p: RecentPayload) {
+        val host = state.host.trim()
+        if (host.isBlank()) {
+            statusOk = false; status = S.setPs5OrFind
+            return
+        }
+        scope.launch {
+            if (PayloadManagerStore.exists(host, state.portInt, p.name)) confirmReplace = p else doSave(p)
+        }
+    }
+
+    confirmReplace?.let { p ->
+        AlertDialog(
+            onDismissRequest = { confirmReplace = null },
+            containerColor = Pearl.Card,
+            title = { Text(S.pldmgrReplaceQ(PayloadManagerStore.folderName(p.name))) },
+            text = { Text(S.pldmgrReplaceBody) },
+            confirmButton = {
+                TextButton(onClick = { confirmReplace = null; doSave(p) }) { Text(S.replace, color = Pearl.Error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmReplace = null }) { Text(S.cancel) } },
+        )
+    }
 
     fun send(p: RecentPayload) {
         val host = state.host.trim()
@@ -139,7 +222,7 @@ fun PayloadScreen(state: AppState) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             })
         }
-        Text(S.loaderNote,
+        Text(S.loaderNote + "\n" + S.pldmgrNote,
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
         PrimaryButton(S.choosePayload, R.drawable.ic_file, { pick.launch(arrayOf("*/*")) },
@@ -173,10 +256,19 @@ fun PayloadScreen(state: AppState) {
                         TextButton(onClick = { send(p) }, enabled = sending == null) {
                             Text(S.send, fontWeight = FontWeight.SemiBold)
                         }
-                        IconButton(onClick = {
-                            recent = recent.filter { it.uri != p.uri }
-                            Store.savePayloads(ctx, recent)
-                        }) { PIcon(R.drawable.ic_close, Pearl.Faint, 18.dp) }
+                        Box {
+                            var menu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menu = true }, enabled = sending == null) {
+                                PIcon(R.drawable.ic_more, Pearl.Faint, 18.dp)
+                            }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Pearl.Card) {
+                                MenuItem(S.saveToPldmgr, R.drawable.ic_download, { menu = false }) { saveToManager(p) }
+                                MenuItem(S.removeFromList, R.drawable.ic_close, { menu = false }, danger = true) {
+                                    recent = recent.filter { it.uri != p.uri }
+                                    Store.savePayloads(ctx, recent)
+                                }
+                            }
+                        }
                     }
                     if (idx < recent.lastIndex) HorizontalDivider(color = Pearl.Divider, modifier = Modifier.padding(start = 16.dp))
                 }

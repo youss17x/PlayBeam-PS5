@@ -48,6 +48,12 @@ class ServerSession(private val host: String) : RemoteFs {
 
     override suspend fun list(path: String) = io { it.list(path) }
 
+    override suspend fun writeFile(path: String, bytes: ByteArray) = io {
+        it.mkdirs(path.substringBeforeLast('/', "/").ifBlank { "/" })
+        it.put(path, 0, bytes.size.toLong(), java.io.ByteArrayInputStream(bytes), ByteArray(64 * 1024),
+            onBytes = {}, checkActive = {})
+    }
+
     override suspend fun makeDir(path: String) = io { it.mkdirs(path) }
 
     override suspend fun renamePath(from: String, to: String) = io { it.rename(from, to) }
