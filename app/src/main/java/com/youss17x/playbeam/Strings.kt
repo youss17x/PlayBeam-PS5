@@ -162,6 +162,12 @@ abstract class Strings {
     abstract fun pkgDpiUnreachable(port: Int): String
     abstract fun pkgDpiError(code: String): String
     abstract val pkgChannel: String
+    abstract val pkgUrlLabel: String
+    abstract val pkgUrlHint: String
+    abstract val pkgUrlInstall: String
+    abstract val pkgUrlInvalid: String
+    abstract val pkgUrlSent: String
+    abstract val pkgUrlNotFound: String
     abstract val pinTitle: String
     abstract val addTile: String
     abstract val tileSent: String
@@ -472,6 +478,12 @@ object En : Strings() {
     override fun pkgDpiUnreachable(port: Int) = "The Direct PKG Installer isn't answering on port $port. Turn it on in the etaHEN toolbox (Services → Direct PKG Installer)."
     override fun pkgDpiError(code: String) = "The PS5 installer refused the PKG (error $code)."
     override val pkgChannel = "PKG installs"
+    override val pkgUrlLabel = "Or install from a link"
+    override val pkgUrlHint = "Paste a direct link to a .pkg. The PS5 downloads it itself — you can close PlayBeam after sending. Pages like Mega or Google Drive don't work."
+    override val pkgUrlInstall = "Install from link"
+    override val pkgUrlInvalid = "The link must start with http:// or https://"
+    override val pkgUrlSent = "✅ Sent to the PS5. It's downloading and installing the PKG — follow it in the PS5 Downloads / notifications."
+    override val pkgUrlNotFound = "The PS5 couldn't find the file at this link (404). Check that it's a direct download link."
     override val pinTitle = "PIN protection"
     override val pinSub = "Only phones that know the PIN can use PlayBeam Server"
     override val pinOn = "On"
@@ -766,6 +778,12 @@ object Fr : Strings() {
     override fun pkgDpiUnreachable(port: Int) = "Le Direct PKG Installer ne répond pas sur le port $port. Activez-le dans la boîte à outils etaHEN (Services → Direct PKG Installer)."
     override fun pkgDpiError(code: String) = "L'installateur de la PS5 a refusé le PKG (erreur $code)."
     override val pkgChannel = "Installations PKG"
+    override val pkgUrlLabel = "Ou installer depuis un lien"
+    override val pkgUrlHint = "Collez un lien direct vers un .pkg. La PS5 le télécharge elle-même — vous pouvez fermer PlayBeam après l'envoi. Les pages comme Mega ou Google Drive ne fonctionnent pas."
+    override val pkgUrlInstall = "Installer depuis le lien"
+    override val pkgUrlInvalid = "Le lien doit commencer par http:// ou https://"
+    override val pkgUrlSent = "✅ Envoyé à la PS5. Elle télécharge et installe le PKG — suivez-le dans Téléchargements / notifications de la PS5."
+    override val pkgUrlNotFound = "La PS5 n'a pas trouvé le fichier à ce lien (404). Vérifiez que c'est un lien de téléchargement direct."
     override val pinTitle = "Protection par PIN"
     override val pinSub = "Seuls les téléphones qui connaissent le PIN peuvent utiliser PlayBeam Server"
     override val pinOn = "Activé"
@@ -1065,6 +1083,12 @@ object Ar : Strings() {
     override fun pkgDpiUnreachable(port: Int) = "Direct PKG Installer لا يرد على المنفذ $port. فعّله من أدوات etaHEN (Services ← Direct PKG Installer)."
     override fun pkgDpiError(code: String) = "رفض مثبّت الـ PS5 الملف (الخطأ $code)."
     override val pkgChannel = "تثبيت PKG"
+    override val pkgUrlLabel = "أو التثبيت من رابط"
+    override val pkgUrlHint = "ألصق رابطاً مباشراً لملف ‎.pkg. الـ PS5 يحمّله بنفسه — يمكنك إغلاق PlayBeam بعد الإرسال. صفحات مثل Mega أو Google Drive لا تعمل."
+    override val pkgUrlInstall = "تثبيت من الرابط"
+    override val pkgUrlInvalid = "يجب أن يبدأ الرابط بـ http:// أو https://"
+    override val pkgUrlSent = "✅ أُرسل إلى الـ PS5. يقوم الآن بتحميل الملف وتثبيته — تابعه في التنزيلات / إشعارات الـ PS5."
+    override val pkgUrlNotFound = "لم يجد الـ PS5 الملف في هذا الرابط (404). تأكد أنه رابط تحميل مباشر."
     override val pinTitle = "الحماية برمز PIN"
     override val pinSub = "فقط الهواتف التي تعرف الرمز تستطيع استعمال PlayBeam Server"
     override val pinOn = "مفعّل"

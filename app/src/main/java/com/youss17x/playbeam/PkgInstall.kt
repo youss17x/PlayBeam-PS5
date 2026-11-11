@@ -300,6 +300,28 @@ class PkgInstallService : Service() {
         private const val EXTRA_HOST = "host"
         private const val EXTRA_PORT = "port"
 
+        /**
+         * Asks DPI to download and install a PKG straight from a web link (the PS5 fetches it
+         * itself — the phone is not involved after this call). Returns null on success or an error.
+         */
+        fun installFromUrl(host: String, url: String, port: Int = DPI_PORT): String? {
+            val json = "{ \"url\" : \"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\" }"
+            val reply = try {
+                Socket().use { s ->
+                    s.connect(InetSocketAddress(host, port), 5_000)
+                    s.soTimeout = 60_000
+                    s.getOutputStream().apply { write(json.toByteArray()); flush() }
+                    runCatching { s.getInputStream().readBytes().toString(Charsets.UTF_8) }.getOrDefault("")
+                }
+            } catch (e: IOException) { return S.pkgDpiUnreachable(port) }
+            val res = Regex("\"res\"\\s*:\\s*\"?(-?\\w+)\"?").find(reply)?.groupValues?.get(1)
+            return when (res) {
+                null, "0" -> null
+                "-2135809020" -> S.pkgUrlNotFound          // 0x80B22404: HTTP 404 from the link
+                else -> S.pkgDpiError(res)
+            }
+        }
+
         fun start(ctx: Context, uri: Uri, name: String, size: Long, host: String, port: Int = DPI_PORT) {
             ctx.startForegroundService(Intent(ctx, PkgInstallService::class.java).setData(uri)
                 .putExtra(EXTRA_NAME, name).putExtra(EXTRA_SIZE, size)

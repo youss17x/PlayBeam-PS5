@@ -354,6 +354,28 @@ private fun PkgCard(state: AppState) {
         PkgInstallService.start(ctx, uri, name, size, host)
     }
 
+    val scope = rememberCoroutineScope()
+    var link by remember { mutableStateOf("") }
+    var linkBusy by remember { mutableStateOf(false) }
+    fun installLink() {
+        val host = state.host.trim()
+        val url = link.trim()
+        if (host.isBlank()) { PkgState.flow.value = PkgState.Info(PkgState.Phase.ERROR, message = S.setPs5OrFind); return }
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            PkgState.flow.value = PkgState.Info(PkgState.Phase.ERROR, message = S.pkgUrlInvalid); return
+        }
+        val name = url.substringBefore('?').substringAfterLast('/').ifBlank { url }
+        linkBusy = true
+        PkgState.flow.value = PkgState.Info(PkgState.Phase.IDLE, name, message = S.pkgStarting)
+        scope.launch {
+            val err = withContext(Dispatchers.IO) { PkgInstallService.installFromUrl(host, url) }
+            PkgState.flow.value = if (err == null)
+                PkgState.Info(PkgState.Phase.DONE, name, message = S.pkgUrlSent)
+            else PkgState.Info(PkgState.Phase.ERROR, name, message = err)
+            linkBusy = false
+        }
+    }
+
     SectionLabel(S.pkgTitle)
     PearlCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -378,6 +400,14 @@ private fun PkgCard(state: AppState) {
                 SecondaryButton(S.stop, R.drawable.ic_close, { PkgInstallService.stop(ctx) }, Modifier.fillMaxWidth())
             } else {
                 PrimaryButton(S.choosePkg, R.drawable.ic_file, { PkgState.reset(); pickPkg.launch(arrayOf("*/*")) })
+                Text(S.pkgUrlLabel, style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(link, { link = it.trim() }, singleLine = true,
+                    placeholder = { Text("https://…/game.pkg") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth())
+                Text(S.pkgUrlHint, style = MaterialTheme.typography.bodySmall, color = Pearl.Muted)
+                SecondaryButton(if (linkBusy) S.pkgStarting else S.pkgUrlInstall, R.drawable.ic_file,
+                    { if (!linkBusy && link.isNotBlank()) installLink() }, Modifier.fillMaxWidth())
             }
         }
     }
