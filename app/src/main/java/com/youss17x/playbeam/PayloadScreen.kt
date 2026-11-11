@@ -30,43 +30,67 @@ import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
- * Keeps a payload in itsPLK's Payload Manager: /data/pldmgr/payloads/<name>/<file>.
- * Uses PlayBeam Server when it runs, otherwise FTP.
+ * Adds a payload to itsPLK's Payload Manager through its own web API (port 8084), the way its
+ * dashboard uploads files: GET /manage:check, then POST /manage:upload with the raw file.
+ * Payload Manager must be running on the PS5.
  */
 object PayloadManagerStore {
-    const val ROOT = "/data/pldmgr/payloads"
+    const val PORT = 8084
 
-    fun folderName(fileName: String) = fileName.substringBeforeLast('.')
-        .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifBlank { "payload" }
+    class NotRunning : IOException("Payload Manager isn't running on the PS5")
 
-    private suspend fun session(host: String, ftpPort: Int): RemoteFs =
-        if (ServerClient.isRunning(host)) ServerSession(host) else FtpSession(host, ftpPort)
-
-    /** True if Payload Manager already has a folder with this name. */
-    suspend fun exists(host: String, ftpPort: Int, fileName: String): Boolean {
-        val s = session(host, ftpPort)
-        return try {
-            runCatching { s.list(ROOT).any { it.isDir && it.name == folderName(fileName) } }.getOrDefault(false)
-        } finally { s.closeAsync() }
+    /** Minimal HTTP/1.1 request over a socket (plain HTTP on the local network). */
+    private fun http(host: String, method: String, path: String, body: ByteArray?): Pair<Int, String> {
+        val s = Socket()
+        try {
+            try { s.connect(InetSocketAddress(host, PORT), 4_000) } catch (e: IOException) { throw NotRunning() }
+            s.soTimeout = 60_000
+            val head = buildString {
+                append("$method $path HTTP/1.1\r\n")
+                append("Host: $host:$PORT\r\n")
+                append("X-PLDMGR-Request: 1\r\n")
+                append("Connection: close\r\n")
+                if (body != null) {
+                    append("Content-Type: application/octet-stream\r\n")
+                    append("Content-Length: ${body.size}\r\n")
+                }
+                append("\r\n")
+            }
+            val out = s.getOutputStream()
+            out.write(head.toByteArray(Charsets.US_ASCII))
+            if (body != null) out.write(body)
+            out.flush()
+            val resp = s.getInputStream().readBytes().toString(Charsets.UTF_8)
+            val status = resp.substringBefore("\r\n").split(' ').getOrNull(1)?.toIntOrNull() ?: 0
+            return status to resp.substringAfter("\r\n\r\n", "")
+        } finally {
+            runCatching { s.close() }
+        }
     }
 
-    suspend fun save(ctx: Context, uri: Uri, fileName: String, host: String, ftpPort: Int) {
+    private fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
+
+    /** True if Payload Manager already has a payload with this file name. */
+    suspend fun exists(host: String, fileName: String): Boolean = withContext(Dispatchers.IO) {
+        val (code, body) = http(host, "GET", "/manage:check?filename=${q(fileName)}", null)
+        if (code != 200) throw IOException(errorText(body) ?: "Payload Manager: HTTP $code")
+        org.json.JSONObject(body).optBoolean("file_exists", false)
+    }
+
+    suspend fun save(ctx: Context, uri: Uri, fileName: String, host: String, replace: Boolean) {
         val bytes = withContext(Dispatchers.IO) {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } ?: throw IOException("Can't read the payload file")
         if (bytes.isEmpty()) throw IOException("The payload file is empty")
-        val dir = "$ROOT/${folderName(fileName)}"
-        val s = session(host, ftpPort)
-        try {
-            // replace older payload files in the folder, keep Payload Manager's own files (icon, settings)
-            runCatching {
-                s.list(dir).filter { !it.isDir && it.name != fileName &&
-                    (it.name.endsWith(".elf", true) || it.name.endsWith(".bin", true)) }
-                    .forEach { s.deletePath("$dir/${it.name}", false) }
-            }
-            s.writeFile("$dir/$fileName", bytes)
-        } finally { s.closeAsync() }
+        withContext(Dispatchers.IO) {
+            val mode = if (replace) "replace" else "new"
+            val (code, body) = http(host, "POST", "/manage:upload?filename=${q(fileName)}&mode=$mode", bytes)
+            if (code != 200) throw IOException(errorText(body) ?: "Payload Manager: HTTP $code")
+        }
     }
+
+    private fun errorText(body: String): String? =
+        runCatching { org.json.JSONObject(body).optString("error").ifBlank { null } }.getOrNull()
 }
 
 /** Sends an .elf / .bin payload to the PS5 payload loader over a raw TCP socket. */
@@ -122,14 +146,17 @@ fun PayloadScreen(state: AppState) {
 
     var confirmReplace by remember { mutableStateOf<RecentPayload?>(null) }
 
-    fun doSave(p: RecentPayload) {
+    fun doSave(p: RecentPayload, replace: Boolean) {
         val host = state.host.trim()
         scope.launch {
             sending = p.name; sendProgress = 0f; status = null
             try {
-                PayloadManagerStore.save(ctx, Uri.parse(p.uri), p.name, host, state.portInt)
+                PayloadManagerStore.save(ctx, Uri.parse(p.uri), p.name, host, replace)
                 statusOk = true
                 status = S.pldmgrSaved(p.name)
+            } catch (e: PayloadManagerStore.NotRunning) {
+                statusOk = false
+                status = "❌ " + S.pldmgrNotRunning
             } catch (e: Exception) {
                 statusOk = false
                 status = if (!onLocalNetwork(ctx)) "❌ ${friendlyError(ctx, host, e)}"
@@ -146,7 +173,13 @@ fun PayloadScreen(state: AppState) {
             return
         }
         scope.launch {
-            if (PayloadManagerStore.exists(host, state.portInt, p.name)) confirmReplace = p else doSave(p)
+            try {
+                if (PayloadManagerStore.exists(host, p.name)) confirmReplace = p else doSave(p, replace = false)
+            } catch (e: PayloadManagerStore.NotRunning) {
+                statusOk = false; status = "❌ " + S.pldmgrNotRunning
+            } catch (e: Exception) {
+                statusOk = false; status = "❌ " + (e.message ?: S.sendFailed)
+            }
         }
     }
 
@@ -154,10 +187,10 @@ fun PayloadScreen(state: AppState) {
         AlertDialog(
             onDismissRequest = { confirmReplace = null },
             containerColor = Pearl.Card,
-            title = { Text(S.pldmgrReplaceQ(PayloadManagerStore.folderName(p.name))) },
+            title = { Text(S.pldmgrReplaceQ(p.name)) },
             text = { Text(S.pldmgrReplaceBody) },
             confirmButton = {
-                TextButton(onClick = { confirmReplace = null; doSave(p) }) { Text(S.replace, color = Pearl.Error) }
+                TextButton(onClick = { confirmReplace = null; doSave(p, replace = true) }) { Text(S.replace, color = Pearl.Error) }
             },
             dismissButton = { TextButton(onClick = { confirmReplace = null }) { Text(S.cancel) } },
         )
