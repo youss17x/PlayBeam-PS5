@@ -25,7 +25,7 @@ $(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h
 
 # One-shot installer for the PlayBeam tile on the PS5 home screen
 $(TILE): tile/main.c tile/assets/param.json tile/assets/icon0.png
-	cd tile && $(CC) $(CFLAGS) -o ../$@ main.c -lSceIpmi -lSceAppInstUtil -lSceUserService -lSceSystemService
+	cd tile && $(CC) $(CFLAGS) -o ../$@ main.c -lSceAppInstUtil -lkernel_sys
 
 clean:
 	rm -f $(ELF) $(TILE)

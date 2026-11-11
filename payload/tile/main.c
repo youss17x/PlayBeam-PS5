@@ -10,6 +10,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <ps5/kernel.h>
+
 #define TITLE_ID "PLBM00001"
 #define APP_DIR "/user/app/" TITLE_ID
 
@@ -29,7 +31,19 @@ INCASSET(param_json, "assets/param.json");
 INCASSET(icon0_png, "assets/icon0.png");
 
 int sceAppInstUtilInitialize(void);
-int sceAppInstUtilAppInstallTitleDir(const char *title_id, const char *dir, void *);
+int sceAppInstUtilTerminate(void);
+int sceAppInstUtilAppInstallAll(void *);
+
+/* Same approach as Payload Manager: look the TitleDir installer up by its NID at run time, and
+   fall back to "install all" when this firmware doesn't have it. */
+static int install_title(const char *title_id) {
+  int (*install_dir)(const char *, const char *, void *) = 0;
+  uint32_t handle;
+  if (!kernel_dynlib_handle(-1, "libSceAppInstUtil.sprx", &handle))
+    install_dir = (void *)kernel_dynlib_resolve(-1, handle, "Wudg3Xe3heE");
+  if (install_dir) return install_dir(title_id, "/user/app/", 0);
+  return sceAppInstUtilAppInstallAll(0);
+}
 
 typedef struct notify_request {
   char useless1[45];
@@ -53,6 +67,7 @@ static int write_file(const char *path, const uint8_t *data, size_t size) {
 
 int main(void) {
   char msg[128];
+  notify("PlayBeam: adding the home screen tile…");
   int err = sceAppInstUtilInitialize();
   if (err) {
     snprintf(msg, sizeof msg, "PlayBeam tile: installer not available (0x%08x)", err);
@@ -68,7 +83,8 @@ int main(void) {
     notify(msg);
     return 1;
   }
-  err = sceAppInstUtilAppInstallTitleDir(TITLE_ID, "/user/app/", 0);
+  err = install_title(TITLE_ID);
+  sceAppInstUtilTerminate();
   if (err) {
     snprintf(msg, sizeof msg, "PlayBeam tile: install failed (0x%08x)", err);
     notify(msg);
