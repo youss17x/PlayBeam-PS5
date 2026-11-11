@@ -206,7 +206,12 @@ fun App(
                                 if (t == Tab.Settings) state.settingsPage = null
                                 tab = t
                             },
-                            icon = { PIcon(t.icon, if (on) Pearl.Accent else Pearl.Muted) },
+                            icon = {
+                                val c = if (on) Pearl.Accent else Pearl.Muted
+                                if (t == Tab.Payload) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    PIcon(t.icon, c, 20.dp); PIcon(R.drawable.ic_package, c, 20.dp)
+                                } else PIcon(t.icon, c)
+                            },
                             label = {
                                 Text(t.label, fontSize = 11.sp, maxLines = 1,
                                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)

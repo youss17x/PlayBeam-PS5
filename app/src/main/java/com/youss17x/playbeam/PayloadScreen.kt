@@ -399,14 +399,14 @@ private fun PkgCard(state: AppState) {
             if (busy) {
                 SecondaryButton(S.stop, R.drawable.ic_close, { PkgInstallService.stop(ctx) }, Modifier.fillMaxWidth())
             } else {
-                PrimaryButton(S.choosePkg, R.drawable.ic_file, { PkgState.reset(); pickPkg.launch(arrayOf("*/*")) })
+                PrimaryButton(S.choosePkg, R.drawable.ic_package, { PkgState.reset(); pickPkg.launch(arrayOf("*/*")) })
                 Text(S.pkgUrlLabel, style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(link, { link = it.trim() }, singleLine = true,
                     placeholder = { Text("https://…/game.pkg") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth())
                 Text(S.pkgUrlHint, style = MaterialTheme.typography.bodySmall, color = Pearl.Muted)
-                SecondaryButton(if (linkBusy) S.pkgStarting else S.pkgUrlInstall, R.drawable.ic_file,
+                SecondaryButton(if (linkBusy) S.pkgStarting else S.pkgUrlInstall, R.drawable.ic_link,
                     { if (!linkBusy && link.isNotBlank()) installLink() }, Modifier.fillMaxWidth())
             }
         }
