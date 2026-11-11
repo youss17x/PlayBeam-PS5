@@ -149,7 +149,9 @@ fun ServerCard(state: AppState) {
     Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
-    // PlayBeam tile on the PS5 home screen (opens the server page in the PS5 browser)
+    // PlayBeam tile on the PS5 home screen (opens the server page in the PS5 browser).
+    // Hidden until the installer works on real consoles.
+    if (SHOW_HOME_TILE) {
     var tileMsg by remember { mutableStateOf<String?>(null) }
     var tileBusy by remember { mutableStateOf(false) }
     SecondaryButton(S.addTile, R.drawable.ic_plus, {
@@ -169,6 +171,7 @@ fun ServerCard(state: AppState) {
     tileMsg?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp),
             color = if (it.startsWith("❌")) Pearl.Error else Pearl.Muted)
+    }
     }
 
     if (serverUp == true) {
@@ -218,3 +221,6 @@ fun ServerCard(state: AppState) {
         }
     }
 }
+
+/** The home screen tile installer is not reliable yet. */
+private const val SHOW_HOME_TILE = false
