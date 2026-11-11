@@ -25,8 +25,6 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
-import java.net.URLDecoder
-import java.net.URLEncoder
 import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -95,7 +93,8 @@ class PkgInstallService : Service() {
         try {
             val ip = phoneIp(this) ?: throw IOException(S.pkgNoWifi)
             val token = ByteArray(8).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
-            val path = "/$token/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+            val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "package.pkg" }
+            val path = "/$token/$safeName"
             val ss = ServerSocket()
             ss.reuseAddress = true
             ss.bind(InetSocketAddress(0))
@@ -158,9 +157,15 @@ class PkgInstallService : Service() {
                         }
                         val parts = lines.firstOrNull()?.split(' ') ?: return@use
                         val method = parts.getOrNull(0) ?: return@use
-                        val reqPath = URLDecoder.decode(parts.getOrNull(1) ?: "", "UTF-8")
+                        // accept origin-form or absolute-form targets, ignore any query, and
+                        // match on the random token only (the PS5 may re-encode the file name)
+                        var target = parts.getOrNull(1) ?: ""
+                        if (target.startsWith("http://", true) || target.startsWith("https://", true))
+                            target = "/" + target.substringAfter("://").substringAfter('/', "")
+                        target = target.substringBefore('?').substringBefore('#')
+                        val token = path.split('/').getOrNull(1) ?: ""
                         val out = sock.getOutputStream()
-                        if (reqPath != URLDecoder.decode(path, "UTF-8")) {
+                        if (token.isEmpty() || !target.startsWith("/$token")) {
                             out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
                             return@use
                         }
