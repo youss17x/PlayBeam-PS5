@@ -51,6 +51,7 @@ static void *sym(const char *lib, const char *name) {
 }
 
 void notify(const char *fmt, ...);
+#define notify(...) do { notify(__VA_ARGS__); usleep(1500 * 1000); } while (0)
 
 static int same_file(const char *path, const uint8_t *data, size_t size) {
   struct stat st;
@@ -78,20 +79,24 @@ int home_app_install(void) {
   if (same_file(param, pb_param_json, pb_param_json_size) && same_file(icon, pb_icon0_png, pb_icon0_png_size))
     return 0;
 
+  notify("PlayBeam test 1/5: loading app installer");
   int (*init)(void) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilInitialize");
   int (*term)(void) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilTerminate");
   int (*install_dir)(const char *, const char *, void *) =
       sym("libSceAppInstUtil.sprx", "sceAppInstUtilAppInstallTitleDir");
   int (*install_all)(void *) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilAppInstallAll");
   if (!init || (!install_dir && !install_all)) { notify("PlayBeam: home tile not available on this PS5"); return -1; }
+  notify("PlayBeam test 2/5: starting app installer");
   int err = init();
   if (err != 0) { notify("PlayBeam: home tile not added (init 0x%08x)", err); return -1; }
+  notify("PlayBeam test 3/5: writing the tile");
   int rc = -1;
   mkdir("/user/app", 0755);
   mkdir(APP_DIR, 0755);
   mkdir(APP_DIR "/sce_sys", 0755);
   if (write_file(param, pb_param_json, pb_param_json_size) == 0 &&
       write_file(icon, pb_icon0_png, pb_icon0_png_size) == 0) {
+    notify("PlayBeam test 3b: registering the tile");
     rc = install_dir ? install_dir(TITLE_ID, "/user/app/", 0) : -1;
     if (rc != 0 && install_all) rc = install_all(0);
   }
@@ -103,12 +108,14 @@ int home_app_install(void) {
 
 /* Opens the page in the PS5 browser, unless a game is running (don't pull the player out). */
 void home_app_open_page(void) {
+  notify("PlayBeam test 4/5: preparing the browser");
   int (*big_app)(void) = sym("libSceSystemService.sprx", "sceLncUtilGetAppIdOfRunningBigApp");
   int (*user_init)(void *) = sym("libSceUserService.sprx", "sceUserServiceInitialize");
   int (*browser)(const char *, void *) = sym("libSceSystemService.sprx", "sceSystemServiceLaunchWebBrowser");
   if (!browser) return;
   if (big_app && (uint32_t)big_app() != UINT32_MAX) return; /* a game is running */
   if (user_init) user_init(0); /* needed before the browser can be launched */
+  notify("PlayBeam test 5/5: opening the browser");
   int err = browser(PAGE_URL, 0);
   if (err != 0) notify("PlayBeam: couldn't open the browser (0x%08x)", err);
 }
