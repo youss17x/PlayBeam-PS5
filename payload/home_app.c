@@ -39,7 +39,8 @@ int sceAppInstUtilInitialize(void);
 int sceAppInstUtilTerminate(void);
 int sceAppInstUtilAppInstallAll(void *);
 int sceAppInstUtilAppInstallTitleDir(const char *title_id, const char *dir, void *);
-int sceSystemServiceLaunchWebBrowser(const char *uri);
+int sceSystemServiceLaunchWebBrowser(const char *uri, void *param);
+int sceUserServiceInitialize(void *param);
 int sceLncUtilGetAppIdOfRunningBigApp(void);
 
 void notify(const char *fmt, ...);
@@ -70,7 +71,8 @@ int home_app_install(void) {
   if (same_file(param, pb_param_json, pb_param_json_size) && same_file(icon, pb_icon0_png, pb_icon0_png_size))
     return 0;
 
-  if (sceAppInstUtilInitialize() != 0) return -1;
+  int err = sceAppInstUtilInitialize();
+  if (err != 0) { notify("PlayBeam: home tile not added (init 0x%08x)", err); return -1; }
   int rc = -1;
   mkdir("/user/app", 0755);
   mkdir(APP_DIR, 0755);
@@ -82,16 +84,36 @@ int home_app_install(void) {
   }
   sceAppInstUtilTerminate();
   if (rc == 0) notify("PlayBeam added to the home screen");
+  else notify("PlayBeam: home tile not added (0x%08x)", rc);
   return rc;
 }
 
 /* Opens the page in the PS5 browser, unless a game is running (don't pull the player out). */
 void home_app_open_page(void) {
   if ((uint32_t)sceLncUtilGetAppIdOfRunningBigApp() != UINT32_MAX) return;
-  sceSystemServiceLaunchWebBrowser(PAGE_URL);
+  sceUserServiceInitialize(0); /* needed before the browser can be launched */
+  int err = sceSystemServiceLaunchWebBrowser(PAGE_URL, 0);
+  if (err != 0) notify("PlayBeam: couldn't open the browser (0x%08x)", err);
+}
+
+#include <pthread.h>
+
+static void *home_thread(void *arg) {
+  (void)arg;
+  sleep(1); /* the server is answering the app first */
+  home_app_install();
+  home_app_open_page();
+  return NULL;
+}
+
+/* Runs in the background so the server keeps working even if this is slow or fails. */
+void home_app_start(void) {
+  pthread_t th;
+  if (pthread_create(&th, NULL, home_thread, NULL) == 0) pthread_detach(th);
 }
 
 #else /* building on a PC for testing */
+void home_app_start(void) {}
 int home_app_install(void) { return 0; }
 void home_app_open_page(void) {}
 #endif

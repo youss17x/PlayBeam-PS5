@@ -968,9 +968,7 @@ int main(void) {
 
   g_started = time(NULL);
   web_start();
-  home_app_install();
-  usleep(300 * 1000); /* let the page server start listening */
-  home_app_open_page();
+  home_app_start();
   char ip[64];
   web_lan_ip(ip, sizeof ip);
   if (ip[0]) notify("PlayBeam Server " SERVER_VERSION " ready\nPage: http://%s:%d", ip, WEB_PORT);
