@@ -31,6 +31,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Pick a whole folder (including all subfolders) or multiple files
 - **Share → PlayBeam** from any app (gallery, file manager, browser downloads…)
 - **Parallel uploads**: 1–4 connections at once — much faster for folders with many small files
+- **PIN protection**: lock PlayBeam Server with a PIN so other phones on your Wi-Fi can't use it
 - **Split big files**: with PlayBeam Server, files over 64 MB are sent in pieces over all connections
   at once (on the PS5's internal drive; USB drives get one piece at a time)
 - **Upload queue**: add more uploads while one is running; remove or stop them any time

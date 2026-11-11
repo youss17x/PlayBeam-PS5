@@ -29,6 +29,18 @@ const val SERVER_PORT = 9113
  * One connection to the PlayBeam Server payload (see payload/main.c for the protocol).
  * Not thread-safe: use one client per thread.
  */
+/** PINs for PlayBeam Server, saved on this phone per console address. */
+object Pins {
+    private var prefs: android.content.SharedPreferences? = null
+    fun init(ctx: android.content.Context) {
+        if (prefs == null) prefs = ctx.applicationContext.getSharedPreferences("pins", android.content.Context.MODE_PRIVATE)
+    }
+    fun get(host: String): String? = prefs?.getString(host.trim(), null)?.takeIf { it.isNotEmpty() }
+    fun set(host: String, pin: String?) {
+        prefs?.edit()?.apply { if (pin.isNullOrEmpty()) remove(host.trim()) else putString(host.trim(), pin) }?.apply()
+    }
+}
+
 class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int = 4_000) : Closeable {
     private val socket = Socket().apply {
         sendBufferSize = 4 shl 20
@@ -50,7 +62,51 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
         return bytes.toString(Charsets.UTF_8.name()).trimEnd('\r')
     }
 
+    /** Set when the server asks for a PIN this phone doesn't have, or has wrong. */
+    private var authError: ServerError? = null
+    /** The server is protected by a PIN. */
+    var pinProtected = false
+        private set
+    /** This connection may use the server (no PIN, or the right one). */
+    val authorized get() = authError == null
+
+    init {
+        try {
+            socket.soTimeout = maxOf(connectTimeoutMs, 3_000)
+            send("HELLO")
+            val hello = ok(readLine())
+            if (hello.endsWith(" PIN")) {
+                pinProtected = true
+                val pin = Pins.get(host)
+                if (pin == null) authError = PinError(S.pinNeeded)
+                else {
+                    send("AUTH $pin")
+                    if (readLine() != "OK") authError = PinError(S.pinWrong)
+                }
+            }
+            socket.soTimeout = 60_000
+        } catch (t: Throwable) {
+            runCatching { socket.close() }
+            throw t
+        }
+    }
+
+    /** Checks [pin] on this connection; true if it unlocks the server. */
+    fun auth(pin: String): Boolean {
+        send("AUTH $pin")
+        val ok = readLine() == "OK"
+        if (ok) authError = null
+        return ok
+    }
+
+    /** Sets (4-8 digits) or removes (empty) the server's PIN. */
+    fun setPin(pin: String) {
+        command(if (pin.isEmpty()) "SETPIN" else "SETPIN $pin")
+        pinProtected = pin.isNotEmpty()
+    }
+
     private fun send(line: String) {
+        authError?.let { if (line != "HELLO" && !line.startsWith("AUTH ")) throw it }
         require('\n' !in line) { "Invalid name" }
         output.write("$line\n".toByteArray(Charsets.UTF_8))
         output.flush()
@@ -244,6 +300,14 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
     }
 
     companion object {
+        /** Null if the server doesn't answer; otherwise (PIN protected, this phone may use it). */
+        suspend fun status(host: String, timeoutMs: Int = 1_500): Pair<Boolean, Boolean>? = withContext(Dispatchers.IO) {
+            if (host.isBlank()) return@withContext null
+            runCatching {
+                ServerClient(host, SERVER_PORT, timeoutMs).use { c -> c.pinProtected to c.authorized }
+            }.getOrNull()
+        }
+
         /** True if the PlayBeam Server payload answers on [host]. */
         suspend fun isRunning(host: String, timeoutMs: Int = 1_500): Boolean = withContext(Dispatchers.IO) {
             if (host.isBlank()) return@withContext false
@@ -258,7 +322,10 @@ class ServerClient(host: String, port: Int = SERVER_PORT, connectTimeoutMs: Int 
 }
 
 /** An error reported by the server itself (the connection is still fine). */
-class ServerError(message: String) : IOException(message)
+open class ServerError(message: String) : IOException(message)
+
+/** The server needs a PIN this phone doesn't have, or has wrong. Retrying won't help. */
+class PinError(message: String) : ServerError(message)
 
 /** Common shape of the FTP and PlayBeam Server uploaders. */
 interface Uploader {
@@ -387,6 +454,9 @@ class ServerUploader(
                     block(client())
                     return
                 } catch (e: CancellationException) {
+                    throw e
+                } catch (e: PinError) {
+                    close()
                     throw e
                 } catch (e: IOException) {
                     close()

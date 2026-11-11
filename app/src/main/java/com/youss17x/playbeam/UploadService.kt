@@ -48,6 +48,7 @@ class UploadService : Service() {
     override fun onCreate() {
         super.onCreate()
         I18n.load(this)
+        Pins.init(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

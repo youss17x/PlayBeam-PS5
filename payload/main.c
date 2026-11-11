@@ -3,7 +3,10 @@
    Simple line protocol over TCP (port 9113). Each command is one line ending in '\n';
    paths are absolute and are always the rest of the line.
 
-     HELLO                         -> OK PlayBeam-Server <version>
+     HELLO                         -> OK PlayBeam-Server <version> [PIN]
+                                      "PIN" means AUTH is needed before any other command
+     AUTH <pin>                    -> OK | ERR wrong PIN   (5 wrong tries close the connection)
+     SETPIN <pin>                  -> OK | ERR <reason>    (4-8 digits; empty removes the PIN)
      MKDIR <path>                  -> OK | ERR <reason>          (like mkdir -p)
      SIZE <path>                   -> OK <bytes>  (OK -1 if missing)
      PUT <offset> <length> <path>  -> READY, then the client sends <length> raw bytes,
@@ -58,7 +61,11 @@
 
 #include "miniz.h"
 
-#define SERVER_VERSION "1.4"
+#define SERVER_VERSION "1.5"
+#ifndef PIN_DIR
+#define PIN_DIR "/data/playbeam"
+#endif
+#define PIN_FILE PIN_DIR "/pin"
 #define SERVER_PORT 9113
 #define LINE_MAX_LEN 4096
 #define IO_BUF_SIZE (4 * 1024 * 1024)
@@ -98,6 +105,8 @@ typedef struct conn {
   size_t rlen;
   size_t rpos;
   char *io; /* IO_BUF_SIZE scratch buffer */
+  int authed;
+  int bad_pins;
 } conn_t;
 
 static int write_all(int fd, const void *data, size_t len) {
@@ -669,6 +678,80 @@ static void cmd_unzip(conn_t *c, char *args) {
 
 /* ---------------------------------------------------------------- server */
 
+/* ---------------------------------------------------------------- PIN */
+
+/* Reads the PIN saved on the PS5 into out; returns 0 if there is none. */
+static int load_pin(char *out, size_t len) {
+  out[0] = 0;
+  int f = open(PIN_FILE, O_RDONLY);
+  if (f < 0) return 0;
+  ssize_t n = read(f, out, len - 1);
+  close(f);
+  if (n <= 0) { out[0] = 0; return 0; }
+  out[n] = 0;
+  out[strcspn(out, "\r\n ")] = 0;
+  return out[0] != 0;
+}
+
+static int valid_pin(const char *p) {
+  size_t n = strlen(p);
+  if (n < 4 || n > 8) return 0;
+  for (size_t i = 0; i < n; i++) if (p[i] < '0' || p[i] > '9') return 0;
+  return 1;
+}
+
+/* Compares without stopping at the first difference. */
+static int pin_equal(const char *a, const char *b) {
+  size_t la = strlen(a), lb = strlen(b);
+  unsigned diff = (unsigned)(la ^ lb);
+  for (size_t i = 0; i < la && i < lb; i++) diff |= (unsigned char)(a[i] ^ b[i]);
+  return diff == 0;
+}
+
+static pthread_mutex_t g_auth_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* Returns -1 when the connection must be closed (too many wrong PINs). */
+static int cmd_auth(conn_t *c, const char *pin) {
+  char saved[16];
+  pthread_mutex_lock(&g_auth_lock);
+  int good = !load_pin(saved, sizeof saved) || pin_equal(pin, saved);
+  /* one wrong guess per second for the whole server, even over many connections */
+  if (!good) sleep(1);
+  pthread_mutex_unlock(&g_auth_lock);
+  if (good) {
+    c->authed = 1;
+    c->bad_pins = 0;
+    send_line(c, "OK");
+    return 0;
+  }
+  if (++c->bad_pins >= 5) {
+    send_line(c, "ERR wrong PIN");
+    notify("PlayBeam: blocked a connection after 5 wrong PINs");
+    return -1;
+  }
+  send_line(c, "ERR wrong PIN");
+  return 0;
+}
+
+static void cmd_setpin(conn_t *c, const char *pin) {
+  if (*pin == 0) {
+    if (unlink(PIN_FILE) != 0 && errno != ENOENT) { send_line(c, "ERR %s", strerror(errno)); return; }
+    send_line(c, "OK");
+    notify("PlayBeam Server: PIN removed");
+    return;
+  }
+  if (!valid_pin(pin)) { send_line(c, "ERR the PIN must be 4 to 8 digits"); return; }
+  mkdir(PIN_DIR, 0700);
+  int f = open(PIN_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (f < 0) { send_line(c, "ERR %s", strerror(errno)); return; }
+  size_t n = strlen(pin);
+  int ok = write(f, pin, n) == (ssize_t)n;
+  close(f);
+  if (!ok) { send_line(c, "ERR can't save the PIN"); return; }
+  send_line(c, "OK");
+  notify("PlayBeam Server: PIN set");
+}
+
 static volatile int g_running = 1;
 static int g_listen_fd = -1;
 
@@ -679,8 +762,20 @@ static void *client_thread(void *arg) {
   while (g_running) {
     if (read_line(c, line, sizeof line) < 0) break;
 
+    char saved[16];
+    int locked = !c->authed && load_pin(saved, sizeof saved);
+    if (!locked) c->authed = 1;
+
     if (strcmp(line, "HELLO") == 0) {
-      send_line(c, "OK PlayBeam-Server " SERVER_VERSION);
+      send_line(c, locked ? "OK PlayBeam-Server " SERVER_VERSION " PIN" : "OK PlayBeam-Server " SERVER_VERSION);
+    } else if (strncmp(line, "AUTH ", 5) == 0 || strcmp(line, "AUTH") == 0) {
+      if (cmd_auth(c, line[4] ? line + 5 : "") != 0) break;
+    } else if (strcmp(line, "QUIT") == 0) {
+      break;
+    } else if (locked) {
+      send_line(c, "ERR PIN required");
+    } else if (strncmp(line, "SETPIN ", 7) == 0 || strcmp(line, "SETPIN") == 0) {
+      cmd_setpin(c, line[6] ? line + 7 : "");
     } else if (strncmp(line, "PUT ", 4) == 0) {
       if (cmd_put(c, line + 4, 1) != 0) break;
     } else if (strncmp(line, "PUTR ", 5) == 0) {
@@ -713,8 +808,6 @@ static void *client_thread(void *arg) {
       cmd_copy(c, line + 5, 0);
     } else if (strncmp(line, "MOVE ", 5) == 0) {
       cmd_copy(c, line + 5, 1);
-    } else if (strcmp(line, "QUIT") == 0) {
-      break;
     } else if (strcmp(line, "SHUTDOWN") == 0) {
       send_line(c, "OK");
       g_running = 0;

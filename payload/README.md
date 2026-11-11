@@ -31,6 +31,8 @@ One command per line (`\n`), paths are absolute and take the rest of the line:
 | `MKDIR <path>` | `OK` / `ERR <reason>` |
 | `SIZE <path>` | `OK <bytes>` (`OK -1` if missing) |
 | `PUT <offset> <length> <path>` | `READY`, then send the bytes, then `OK` / `ERR` |
+| `AUTH <pin>` | `OK` / `ERR wrong PIN` — needed first when `HELLO` ends with `PIN` (5 wrong tries close the connection) |
+| `SETPIN <pin>` | Sets a 4–8 digit PIN, or removes it when empty (saved in `/data/playbeam/pin`) |
 | `CREATE <size> <path>` | Empty file for a split upload: `OK SPARSE <fs>` (pieces may be sent in parallel) or `OK <fs>` (USB exFAT/FAT) |
 | `PUTR <offset> <length> <path>` | Like `PUT` but never truncates (one piece of a split upload) |
 | `UNZIP <zip>⇥<dest>` | `PROG <done> <total>` lines, then `OK <files>` / `ERR` |

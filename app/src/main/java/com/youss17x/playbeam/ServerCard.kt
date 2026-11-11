@@ -27,10 +27,56 @@ fun ServerCard(state: AppState) {
     var serverBusy by remember { mutableStateOf<String?>(null) }
     var serverMsg by remember { mutableStateOf<String?>(null) }
 
+    // PIN: is the server protected, and may this phone use it
+    var pinProtected by remember { mutableStateOf(false) }
+    var authorized by remember { mutableStateOf(true) }
+    var pinBusy by remember { mutableStateOf(false) }
+    var pinMsg by remember { mutableStateOf<String?>(null) }
+    var pinText by remember { mutableStateOf("") }
+
+    suspend fun refresh() {
+        val st = ServerClient.status(state.host.trim())
+        serverUp = st != null
+        pinProtected = st?.first ?: false
+        authorized = st?.second ?: true
+    }
+
     LaunchedEffect(state.host) {
         while (true) {
-            if (serverBusy == null) serverUp = ServerClient.isRunning(state.host.trim())
+            if (serverBusy == null && !pinBusy) refresh()
             delay(8_000)
+        }
+    }
+
+    fun pinAction(newPin: String?, unlock: Boolean = false) {
+        val host = state.host.trim()
+        if (newPin != null && newPin.isNotEmpty() && (newPin.length !in 4..8 || !newPin.all(Char::isDigit))) {
+            pinMsg = S.pinInvalid; return
+        }
+        scope.launch {
+            pinBusy = true; pinMsg = null
+            pinMsg = try {
+                withContext(Dispatchers.IO) {
+                    ServerClient(host).use { c ->
+                        if (unlock) {
+                            if (c.auth(newPin!!)) { Pins.set(host, newPin); S.pinUnlocked } else S.pinWrongShort
+                        } else {
+                            c.setPin(newPin ?: "")
+                            Pins.set(host, newPin)
+                            if (newPin.isNullOrEmpty()) S.pinRemoved else S.pinSet
+                        }
+                    }
+                }
+            } catch (e: PinError) {
+                "❌ " + e.message
+            } catch (e: ServerError) {
+                if (e.message == "unknown command") S.pinUpdateServer else "❌ " + e.message
+            } catch (e: Exception) {
+                "❌ " + (e.message ?: S.sendFailed)
+            }
+            pinText = ""
+            refresh()
+            pinBusy = false
         }
     }
 
@@ -102,4 +148,49 @@ fun ServerCard(state: AppState) {
     }
     Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
+
+    if (serverUp == true) {
+        PearlCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(S.pinTitle, style = MaterialTheme.typography.titleMedium)
+                        Text(S.pinSub, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (pinProtected) Chip(S.pinOn, Pearl.OkText, Pearl.OkSoft, Pearl.Ok)
+                    else Chip(S.off, Pearl.Muted, Pearl.Track)
+                }
+                if (pinProtected && !authorized) {
+                    Text(S.pinLocked, style = MaterialTheme.typography.bodyMedium, color = Pearl.Error)
+                }
+                OutlinedTextField(
+                    pinText, { pinText = it.filter(Char::isDigit).take(8) },
+                    label = { Text(S.pinField) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp), colors = pearlFieldColors(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                )
+                if (pinProtected && !authorized) {
+                    PrimaryButton(S.unlock, R.drawable.ic_bolt, { pinAction(pinText, unlock = true) },
+                        enabled = !pinBusy && pinText.length >= 4, container = Pearl.Accent)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton(S.setPin, R.drawable.ic_edit, { pinAction(pinText) }, Modifier.weight(1f),
+                            enabled = !pinBusy && pinText.length >= 4)
+                        if (pinProtected) {
+                            SecondaryButton(S.removePin, R.drawable.ic_close, { pinAction("") }, Modifier.weight(1f),
+                                enabled = !pinBusy)
+                        }
+                    }
+                }
+                if (pinBusy) PearlProgress(null)
+                pinMsg?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = if (it.startsWith("❌")) Pearl.Error else Pearl.OkText)
+                }
+                Text(S.pinForgot, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
 }

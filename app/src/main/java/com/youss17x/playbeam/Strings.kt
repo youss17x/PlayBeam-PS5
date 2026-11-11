@@ -148,6 +148,23 @@ abstract class Strings {
     abstract val serverCardSub: String
     abstract val running: String
     abstract val off: String
+    abstract val pinTitle: String
+    abstract val pinSub: String
+    abstract val pinOn: String
+    abstract val pinField: String
+    abstract val setPin: String
+    abstract val removePin: String
+    abstract val unlock: String
+    abstract val pinLocked: String
+    abstract val pinSet: String
+    abstract val pinRemoved: String
+    abstract val pinUnlocked: String
+    abstract val pinNeeded: String
+    abstract val pinWrong: String
+    abstract val pinWrongShort: String
+    abstract val pinInvalid: String
+    abstract val pinUpdateServer: String
+    abstract val pinForgot: String
     abstract val startOnPs5: String
     abstract val stopServer: String
     abstract val sendingServer: String
@@ -403,6 +420,23 @@ object En : Strings() {
     override val serverCardSub = "Faster uploads · extracts ZIPs on the PS5"
     override val running = "Running"
     override val off = "Off"
+    override val pinTitle = "PIN protection"
+    override val pinSub = "Only phones that know the PIN can use PlayBeam Server"
+    override val pinOn = "On"
+    override val pinField = "PIN (4–8 digits)"
+    override val setPin = "Set PIN"
+    override val removePin = "Remove PIN"
+    override val unlock = "Unlock"
+    override val pinLocked = "This PS5 is protected by a PIN. Enter it to use PlayBeam Server from this phone."
+    override val pinSet = "✅ PIN set. Other phones need it to connect."
+    override val pinRemoved = "✅ PIN removed"
+    override val pinUnlocked = "✅ Unlocked"
+    override val pinNeeded = "PlayBeam Server is protected by a PIN — enter it in Settings → PlayBeam Server"
+    override val pinWrong = "Wrong PIN for PlayBeam Server — check it in Settings → PlayBeam Server"
+    override val pinWrongShort = "❌ Wrong PIN"
+    override val pinInvalid = "❌ The PIN must be 4 to 8 digits"
+    override val pinUpdateServer = "❌ This PlayBeam Server is too old for PINs: Stop it, then Start on PS5."
+    override val pinForgot = "Forgot it? Delete /data/playbeam/pin on the PS5 with FTP, then restart the server."
     override val startOnPs5 = "Start on PS5"
     override val stopServer = "Stop server"
     override val sendingServer = "Sending PlayBeam Server…"
@@ -651,6 +685,23 @@ object Fr : Strings() {
     override val serverCardSub = "Envois plus rapides · décompresse les ZIP sur la PS5"
     override val running = "Actif"
     override val off = "Arrêté"
+    override val pinTitle = "Protection par PIN"
+    override val pinSub = "Seuls les téléphones qui connaissent le PIN peuvent utiliser PlayBeam Server"
+    override val pinOn = "Activé"
+    override val pinField = "PIN (4 à 8 chiffres)"
+    override val setPin = "Définir le PIN"
+    override val removePin = "Retirer le PIN"
+    override val unlock = "Déverrouiller"
+    override val pinLocked = "Cette PS5 est protégée par un PIN. Saisissez-le pour utiliser PlayBeam Server depuis ce téléphone."
+    override val pinSet = "✅ PIN défini. Les autres téléphones en auront besoin pour se connecter."
+    override val pinRemoved = "✅ PIN retiré"
+    override val pinUnlocked = "✅ Déverrouillé"
+    override val pinNeeded = "PlayBeam Server est protégé par un PIN — saisissez-le dans Réglages → PlayBeam Server"
+    override val pinWrong = "PIN incorrect pour PlayBeam Server — vérifiez-le dans Réglages → PlayBeam Server"
+    override val pinWrongShort = "❌ PIN incorrect"
+    override val pinInvalid = "❌ Le PIN doit comporter 4 à 8 chiffres"
+    override val pinUpdateServer = "❌ Ce PlayBeam Server est trop ancien pour les PIN : arrêtez-le, puis relancez-le sur la PS5."
+    override val pinForgot = "Oublié ? Supprimez /data/playbeam/pin sur la PS5 par FTP, puis relancez le serveur."
     override val startOnPs5 = "Lancer sur la PS5"
     override val stopServer = "Arrêter le serveur"
     override val sendingServer = "Envoi de PlayBeam Server…"
@@ -904,6 +955,23 @@ object Ar : Strings() {
     override val serverCardSub = "رفع أسرع · يفك ضغط ZIP على PS5"
     override val running = "يعمل"
     override val off = "متوقف"
+    override val pinTitle = "الحماية برمز PIN"
+    override val pinSub = "فقط الهواتف التي تعرف الرمز تستطيع استعمال PlayBeam Server"
+    override val pinOn = "مفعّل"
+    override val pinField = "الرمز (4 إلى 8 أرقام)"
+    override val setPin = "تعيين الرمز"
+    override val removePin = "إزالة الرمز"
+    override val unlock = "فتح"
+    override val pinLocked = "هذا الـ PS5 محمي برمز PIN. أدخله لاستعمال PlayBeam Server من هذا الهاتف."
+    override val pinSet = "✅ تم تعيين الرمز. الهواتف الأخرى تحتاجه للاتصال."
+    override val pinRemoved = "✅ تمت إزالة الرمز"
+    override val pinUnlocked = "✅ تم الفتح"
+    override val pinNeeded = "PlayBeam Server محمي برمز PIN — أدخله في الإعدادات ← PlayBeam Server"
+    override val pinWrong = "رمز PIN خاطئ لـ PlayBeam Server — تحقق منه في الإعدادات ← PlayBeam Server"
+    override val pinWrongShort = "❌ رمز خاطئ"
+    override val pinInvalid = "❌ يجب أن يكون الرمز من 4 إلى 8 أرقام"
+    override val pinUpdateServer = "❌ نسخة PlayBeam Server قديمة لا تدعم الرمز: أوقفه ثم شغّله من جديد على الـ PS5."
+    override val pinForgot = "نسيت الرمز؟ احذف الملف /data/playbeam/pin من الـ PS5 عبر FTP ثم أعد تشغيل السيرفر."
     override val startOnPs5 = "تشغيل على PS5"
     override val stopServer = "إيقاف الخادم"
     override val sendingServer = "جارٍ إرسال PlayBeam Server…"

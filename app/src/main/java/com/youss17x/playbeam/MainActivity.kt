@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         I18n.load(this)
+        Pins.init(this)
         Pearl.load(this)
         applySystemBars(Pearl.isDark)
         val firstStart = savedInstanceState == null
