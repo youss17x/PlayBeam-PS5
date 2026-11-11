@@ -107,57 +107,16 @@ object PayloadSender {
         sendAsset(ctx, "playbeam-server.elf", host, port, onProgress)
 
     /**
-     * Puts the home tile installer in the Y2JB autoloader (/data/ps5_autoloader) for the next boot:
-     * keeps a backup of autoload.txt and adds one line after the existing ones. The installer
-     * restores the backup and deletes itself when it runs. Needs PlayBeam Server.
-     * Returns false if autoload.txt doesn't exist (then nothing is changed).
+     * Puts the PlayBeam app for the PS5 home screen (a small native title, PLBM00001) in
+     * /data/homebrew through PlayBeam Server; ShadowMountPlus then adds its tile.
      */
-    suspend fun scheduleTileAtBoot(ctx: Context, host: String): Boolean = withContext(Dispatchers.IO) {
-        val elf = ctx.assets.open("playbeam-tile.elf").use { it.readBytes() }
+    suspend fun installHomeApp(ctx: Context, host: String) = withContext(Dispatchers.IO) {
+        val zip = ctx.assets.open("playbeam-ps5-app.zip").use { it.readBytes() }
         ServerClient(host).use { c ->
-            val dir = "/data/ps5_autoloader"
-            val txt = "$dir/autoload.txt"
-            if (c.size(txt) < 0) return@withContext false
-            val out = java.io.ByteArrayOutputStream()
-            c.get(txt, out, {}, {})
-            val current = out.toString(Charsets.UTF_8.name())
-            if (!current.contains("playbeam-tile.elf")) {
-                fun write(path: String, bytes: ByteArray) =
-                    c.put(path, 0, bytes.size.toLong(), java.io.ByteArrayInputStream(bytes), ByteArray(64 * 1024), {}, {})
-                write("$dir/autoload.txt.playbeam-backup", current.toByteArray())
-                write("$dir/playbeam-tile.elf", elf)
-                val added = current.trimEnd('\n', '\r') + "\n!5000\nplaybeam-tile.elf\n"
-                write(txt, added.toByteArray())
-            }
-            true
-        }
-    }
-
-    /**
-     * One-shot payload that adds the PlayBeam tile to the PS5 home screen. Returns what the
-     * ELF loader and the installer printed (the loader sends the payload's output back).
-     */
-    suspend fun sendTileInstaller(ctx: Context, host: String, port: Int): String {
-        val bytes = withContext(Dispatchers.IO) {
-            runCatching { ctx.assets.open("playbeam-tile.elf").use { it.readBytes() } }.getOrNull()
-        } ?: throw IOException("playbeam-tile.elf is not included in this build")
-        return withContext(Dispatchers.IO) {
-            Socket().use { s ->
-                s.connect(InetSocketAddress(host, port), 5_000)
-                s.getOutputStream().apply { write(bytes); flush() }
-                s.shutdownOutput()
-                // read the output for a few seconds
-                s.soTimeout = 1_000
-                val out = java.io.ByteArrayOutputStream()
-                val buf = ByteArray(4096)
-                val end = System.currentTimeMillis() + 8_000
-                while (System.currentTimeMillis() < end) {
-                    val n = try { s.getInputStream().read(buf) } catch (e: java.net.SocketTimeoutException) { continue }
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                }
-                out.toString(Charsets.UTF_8.name()).trim()
-            }
+            val tmp = "/data/homebrew/.playbeam-ps5-app.zip"
+            c.mkdirs("/data/homebrew")
+            c.put(tmp, 0, zip.size.toLong(), java.io.ByteArrayInputStream(zip), ByteArray(1 shl 20), {}, {})
+            try { c.unzip(tmp, "/data/homebrew") { _, _ -> } } finally { runCatching { c.rm(tmp) } }
         }
     }
 

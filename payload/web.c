@@ -11,7 +11,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <poll.h>
 #include <unistd.h>
 
 #include "activity.h"
@@ -72,90 +71,6 @@ static size_t qr_svg(char *out, size_t cap, const char *ip) {
         n += (size_t)snprintf(out + n, cap - n, "M%d,%dh1v1h-1z", x + border, y + border);
   if (n < cap) n += (size_t)snprintf(out + n, cap - n, "\"/></svg>");
   return n < cap ? n : 0;
-}
-
-/* ---- diagnostics: GET /debug/tile ------------------------------------------------------
-   Sends the bundled home-tile installer to the ELF loader (127.0.0.1:9021) and returns, as
-   text, what the loader answered plus the PS5 kernel log (from klogsrv on 127.0.0.1:3232) for
-   a few seconds — to find out why the installer fails. */
-#define INCASSET(name, file)                                                   \
-  __asm__(".section .rodata\n"                                                 \
-          ".global " #name "\n"                                                \
-          ".global " #name "_end\n"                                            \
-          ".global " #name "_size\n"                                           \
-          ".align 16\n" #name ":\n"                                            \
-          ".incbin \"" file "\"\n" #name "_end:\n" #name "_size:\n"            \
-          ".quad " #name "_end - " #name "\n"                                  \
-          ".previous\n");                                                      \
-  extern const uint8_t name[];                                                 \
-  extern const size_t name##_size;
-
-#ifdef PLAYBEAM_TILE_ELF
-INCASSET(tile_elf, PLAYBEAM_TILE_ELF);
-#endif
-
-static int connect_local(int port) {
-  int s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s < 0) return -1;
-  struct sockaddr_in a = {0};
-  a.sin_family = AF_INET;
-  a.sin_port = htons((uint16_t)port);
-  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  if (connect(s, (struct sockaddr *)&a, sizeof a) != 0) { close(s); return -1; }
-  return s;
-}
-
-static size_t debug_tile(char *out, size_t cap) {
-  size_t n = 0;
-#ifdef PLAYBEAM_TILE_ELF
-  int klog = connect_local(3232);
-  n += (size_t)snprintf(out + n, cap - n, "klogsrv: %s\n", klog >= 0 ? "connected" : "not running on 3232");
-  /* drop what klog already had, keep only what happens from now on */
-  if (klog >= 0) {
-    char tmp[4096];
-    struct pollfd p = {klog, POLLIN, 0};
-    while (poll(&p, 1, 300) > 0 && recv(klog, tmp, sizeof tmp, 0) > 0) {}
-  }
-  int ldr = connect_local(9021);
-  n += (size_t)snprintf(out + n, cap - n, "elfldr 9021: %s\n", ldr >= 0 ? "connected" : "not reachable");
-  if (ldr >= 0) {
-    write_all_fd(ldr, (const char *)tile_elf, tile_elf_size);
-    shutdown(ldr, SHUT_WR);
-    n += (size_t)snprintf(out + n, cap - n, "sent %zu bytes\n", tile_elf_size);
-  }
-  n += (size_t)snprintf(out + n, cap - n, "\n--- output (8 s) ---\n");
-  struct timeval t0, t;
-  gettimeofday(&t0, NULL);
-  for (;;) {
-    gettimeofday(&t, NULL);
-    long ms = (t.tv_sec - t0.tv_sec) * 1000 + (t.tv_usec - t0.tv_usec) / 1000;
-    if (ms > 8000 || n > cap - 4096) break;
-    struct pollfd p[2] = {{ldr, POLLIN, 0}, {klog, POLLIN, 0}};
-    if (poll(p, 2, 200) <= 0) continue;
-    for (int i = 0; i < 2; i++) {
-      if (p[i].fd < 0 || !(p[i].revents & (POLLIN | POLLHUP))) continue;
-      char buf[2048];
-      ssize_t r = recv(p[i].fd, buf, sizeof buf, 0);
-      if (r <= 0) {
-        n += (size_t)snprintf(out + n, cap - n, "[%s closed]\n", i ? "klog" : "elfldr");
-        close(p[i].fd);
-        if (i) klog = -1; else ldr = -1;
-        continue;
-      }
-      n += (size_t)snprintf(out + n, cap - n, "%s", i ? "" : "[elfldr] ");
-      size_t room = cap - n - 1;
-      size_t c = (size_t)r < room ? (size_t)r : room;
-      memcpy(out + n, buf, c);
-      n += c;
-      out[n] = 0;
-    }
-  }
-  if (ldr >= 0) close(ldr);
-  if (klog >= 0) close(klog);
-#else
-  n += (size_t)snprintf(out + n, cap - n, "tile installer not bundled in this build\n");
-#endif
-  return n;
 }
 
 static const char PAGE[] =
@@ -227,12 +142,6 @@ static void handle(int fd) {
     if (!buf) return;
     size_t n = act_status_json(buf, 16384);
     respond(fd, "200 OK", "application/json", buf, n);
-    free(buf);
-  } else if (strcmp(path, "/debug/tile") == 0) {
-    char *buf = malloc(262144);
-    if (!buf) return;
-    size_t n = debug_tile(buf, 262144);
-    respond(fd, "200 OK", "text/plain; charset=utf-8", buf, n);
     free(buf);
   } else if (strcmp(path, "/qr.svg") == 0) {
     char ip[64];

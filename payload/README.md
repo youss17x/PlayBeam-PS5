@@ -56,9 +56,7 @@ PlayBeam Server also serves a small web page: open `http://127.0.0.1:9116` in a 
 PS5 selected (`playbeam://connect?host=<ip>`), and live progress of the files being sent.
 `GET /status` returns the same data as JSON.
 
-`playbeam-tile.elf` (in `tile/`) is a separate one-shot payload that adds a **PlayBeam** tile to the
-PS5 home screen (title ID `PLBM00001`, in `/user/app/PLBM00001`) that opens this page in the PS5
-browser. The app sends it from Settings → PlayBeam Server.
+The PlayBeam tile for the PS5 home screen is a small native title in `../launcher/`.
 
 The QR code is made with [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library)
 by Project Nayuki (MIT License, see the header of `qrcodegen.c`).

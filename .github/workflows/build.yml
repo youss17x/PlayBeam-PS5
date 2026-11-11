@@ -29,7 +29,13 @@ jobs:
         run: |
           make -C payload PS5_PAYLOAD_SDK="$HOME/ps5sdk"
           mkdir -p app/src/main/assets
-          cp payload/playbeam-server.elf payload/playbeam-tile.elf app/src/main/assets/
+          cp payload/playbeam-server.elf app/src/main/assets/
+
+      - name: Build PlayBeam app for the PS5 home screen
+        run: |
+          git clone -q --depth 1 --branch v1.3.1 https://github.com/madler/zlib "$RUNNER_TEMP/zlib"
+          PS5_PAYLOAD_SDK="$HOME/ps5sdk" ZLIB_SRC="$RUNNER_TEMP/zlib" launcher/build.sh
+          cp launcher/out/playbeam-ps5-app.zip app/src/main/assets/
 
       # ---- Android app ----
       - uses: actions/setup-java@v4

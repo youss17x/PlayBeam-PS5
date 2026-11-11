@@ -166,6 +166,7 @@ abstract class Strings {
     abstract val addTile: String
     abstract val tileSent: String
     abstract val tileAtBoot: String
+    abstract val homeAppInstalled: String
     abstract val tileUndo: String
     abstract val tileUndone: String
     abstract val tileNoAutoloader: String
@@ -450,9 +451,10 @@ object En : Strings() {
     override val off = "Off"
     override fun linkedTo(host: String) = "Connected to the PS5 at $host"
     override fun webPageNote(host: String) = "On the PS5, open http://127.0.0.1:9116 in a web browser to see a QR code and the transfer progress on your TV (or http://$host:9116 from any device)."
-    override val addTile = "Add PlayBeam to the PS5 home screen"
+    override val addTile = "Add PlayBeam to the PS5 home screen (ShadowMountPlus)"
     override val tileUndo = "Undo the autoloader change"
     override val tileUndone = "✅ autoload.txt is back as it was."
+    override val homeAppInstalled = "✅ PlayBeam was copied to /data/homebrew/PLBM00001. Scan for games in ShadowMountPlus (or restart the PS5): a PlayBeam tile appears and opens this page. Keep PlayBeam Server running."
     override val tileAtBoot = "✅ Ready. Restart the PS5 and open YouTube (Y2JB) as usual: the PlayBeam tile is added during that boot, then your autoload.txt is put back as it was."
     override val tileNoAutoloader = "No /data/ps5_autoloader/autoload.txt on this PS5, so nothing was changed."
     override val tileSent = "Sent. A PlayBeam tile should appear on the PS5 home screen (look in Media). It opens the PlayBeam Server page — keep the server running."
@@ -746,6 +748,7 @@ object Fr : Strings() {
     override val addTile = "Ajouter PlayBeam à l'écran d'accueil PS5"
     override val tileUndo = "Annuler la modification de l'autoloader"
     override val tileUndone = "✅ autoload.txt est revenu comme avant."
+    override val homeAppInstalled = "✅ PlayBeam a été copié dans /data/homebrew/PLBM00001. Lancez une recherche de jeux dans ShadowMountPlus (ou redémarrez la PS5) : une vignette PlayBeam apparaît et ouvre cette page. Gardez PlayBeam Server lancé."
     override val tileAtBoot = "✅ Prêt. Redémarrez la PS5 et lancez YouTube (Y2JB) comme d'habitude : la vignette PlayBeam est ajoutée pendant ce démarrage, puis votre autoload.txt est remis comme avant."
     override val tileNoAutoloader = "Pas de /data/ps5_autoloader/autoload.txt sur cette PS5 : rien n'a été modifié."
     override val tileSent = "Envoyé. Une vignette PlayBeam devrait apparaître sur l'écran d'accueil de la PS5 (dans Multimédia). Elle ouvre la page de PlayBeam Server — gardez le serveur lancé."
@@ -1044,6 +1047,7 @@ object Ar : Strings() {
     override val addTile = "إضافة PlayBeam إلى الشاشة الرئيسية للـ PS5"
     override val tileUndo = "إلغاء التعديل على الـ autoloader"
     override val tileUndone = "✅ رجع autoload.txt كما كان."
+    override val homeAppInstalled = "✅ تم نسخ PlayBeam إلى /data/homebrew/PLBM00001. اعمل Scan في ShadowMountPlus (أو أعد تشغيل الـ PS5): تظهر أيقونة PlayBeam وتفتح هذه الصفحة. أبقِ PlayBeam Server شغّالاً."
     override val tileAtBoot = "✅ جاهز. أعد تشغيل الـ PS5 وافتح YouTube (Y2JB) كالعادة: تُضاف أيقونة PlayBeam أثناء هذا الإقلاع، ثم يرجع ملف autoload.txt كما كان."
     override val tileNoAutoloader = "لا يوجد /data/ps5_autoloader/autoload.txt في هذا الـ PS5، فلم يتغير شيء."
     override val tileSent = "تم الإرسال. يجب أن تظهر أيقونة PlayBeam على الشاشة الرئيسية للـ PS5 (في قسم الوسائط). تفتح صفحة PlayBeam Server — أبقِ السيرفر شغّالاً."

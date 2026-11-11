@@ -51,7 +51,13 @@ jobs:
         run: |
           make -C payload PS5_PAYLOAD_SDK="$HOME/ps5sdk"
           mkdir -p app/src/main/assets
-          cp payload/playbeam-server.elf payload/playbeam-tile.elf app/src/main/assets/
+          cp payload/playbeam-server.elf app/src/main/assets/
+
+      - name: Build PlayBeam app for the PS5 home screen
+        run: |
+          git clone -q --depth 1 --branch v1.3.1 https://github.com/madler/zlib "$RUNNER_TEMP/zlib"
+          PS5_PAYLOAD_SDK="$HOME/ps5sdk" ZLIB_SRC="$RUNNER_TEMP/zlib" launcher/build.sh
+          cp launcher/out/playbeam-ps5-app.zip app/src/main/assets/
 
       # ---- Android app ----
       - uses: actions/setup-java@v4
@@ -73,7 +79,7 @@ jobs:
           gradle assembleRelease --no-daemon -PversionName="$VERSION" -PversionCode="${{ github.run_number }}0"
           cp app/build/outputs/apk/release/*.apk "PlayBeam-PS5-$VERSION.apk"
           cp payload/playbeam-server.elf "playbeam-server-$VERSION.elf"
-          cp payload/playbeam-tile.elf "playbeam-tile-$VERSION.elf"
+          cp launcher/out/playbeam-ps5-app.zip "playbeam-ps5-app-$VERSION.zip"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
@@ -85,4 +91,4 @@ jobs:
           files: |
             PlayBeam-PS5-${{ env.VERSION }}.apk
             playbeam-server-${{ env.VERSION }}.elf
-            playbeam-tile-${{ env.VERSION }}.elf
+            playbeam-ps5-app-${{ env.VERSION }}.zip

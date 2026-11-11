@@ -149,8 +149,8 @@ fun ServerCard(state: AppState) {
     Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
-    // PlayBeam tile on the PS5 home screen: installed once at the next boot by the Y2JB autoloader
-    // (payloads sent through the ELF loader can't use the PS5 app installer)
+    // PlayBeam on the PS5 home screen: a small native title that ShadowMountPlus installs
+    // from /data/homebrew, and that opens the server page in the PS5 browser
     if (serverUp == true) {
         var tileMsg by remember { mutableStateOf<String?>(null) }
         var tileBusy by remember { mutableStateOf(false) }
@@ -158,7 +158,8 @@ fun ServerCard(state: AppState) {
             scope.launch {
                 tileBusy = true; tileMsg = null
                 tileMsg = try {
-                    if (PayloadSender.scheduleTileAtBoot(ctx, state.host.trim())) S.tileAtBoot else "❌ " + S.tileNoAutoloader
+                    PayloadSender.installHomeApp(ctx, state.host.trim())
+                    S.homeAppInstalled
                 } catch (e: PinError) {
                     "❌ " + e.message
                 } catch (e: Exception) {
