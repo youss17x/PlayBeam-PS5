@@ -15,12 +15,12 @@ endif
 ELF := playbeam-server.elf
 
 CFLAGS := -Wall -O2 -Wno-unused-function
-LDLIBS := -lpthread -lkernel_sys
+LDLIBS := -lpthread -lkernel_sys -lSceSystemService -lSceAppInstUtil
 
 all: $(ELF)
 
-$(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h
-	$(CC) $(CFLAGS) -o $@ main.c web.c qrcodegen.c miniz.c $(LDLIBS)
+$(ELF): main.c web.c home_app.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h assets/param.json assets/icon0.png
+	$(CC) $(CFLAGS) -o $@ main.c web.c home_app.c qrcodegen.c miniz.c $(LDLIBS)
 
 clean:
 	rm -f $(ELF)

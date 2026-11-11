@@ -31,7 +31,7 @@ Clean, bright **Pearl** design: settings-style cards, one-tap console and destin
 - Pick a whole folder (including all subfolders) or multiple files
 - **Share → PlayBeam** from any app (gallery, file manager, browser downloads…)
 - **Parallel uploads**: 1–4 connections at once — much faster for folders with many small files
-- **TV page with QR code**: open `http://127.0.0.1:9116` on the PS5 to see a QR code (scan it to connect the app) and live transfer progress on your TV
+- **PlayBeam on the PS5 home screen**: PlayBeam Server adds a PlayBeam tile that opens its page on your TV — a QR code to connect the app and live transfer progress
 - **PIN protection**: lock PlayBeam Server with a PIN so other phones on your Wi-Fi can't use it
 - **Split big files**: with PlayBeam Server, files over 64 MB are sent in pieces over all connections
   at once (on the PS5's internal drive; USB drives get one piece at a time)

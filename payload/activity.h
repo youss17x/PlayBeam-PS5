@@ -16,3 +16,7 @@ int pin_is_set(void);
 /* Starts the web page server thread on WEB_PORT. */
 #define WEB_PORT 9116
 void web_start(void);
+
+/* home_app.c: the PlayBeam tile on the PS5 home screen */
+int home_app_install(void);
+void home_app_open_page(void);
