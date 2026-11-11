@@ -32,6 +32,8 @@
      QUIT                          -> closes this connection
      SHUTDOWN                      -> OK, then the server exits
 
+   A web page on port 9116 shows a QR code for the app and live transfer progress.
+
    Every connection runs in its own thread, so the app can upload over several
    connections at once. ZIP extraction uses miniz (MIT licence, see miniz-LICENSE). */
 
@@ -60,8 +62,9 @@
 #include <unistd.h>
 
 #include "miniz.h"
+#include "activity.h"
 
-#define SERVER_VERSION "1.5"
+#define SERVER_VERSION "1.6"
 #ifndef PIN_DIR
 #define PIN_DIR "/data/playbeam"
 #endif
@@ -280,19 +283,26 @@ static int cmd_put(conn_t *c, char *args, int may_truncate) {
   }
   if (send_line(c, "READY") != 0) { close(f); return -1; }
 
+  int slot = act_begin('u', path, length);
   int write_err = 0;
   long long left = length;
   while (left > 0) {
     size_t want = left > IO_BUF_SIZE ? IO_BUF_SIZE : (size_t)left;
     ssize_t n = conn_read(c, c->io, want);
-    if (n <= 0) { close(f); return -1; } /* client went away mid-file */
+    if (n <= 0) { close(f); act_end(slot); return -1; } /* client went away mid-file */
     if (!write_err && write_all(f, c->io, (size_t)n) != 0) write_err = errno ? errno : EIO;
     left -= n;
+    act_add(slot, n);
   }
+  act_end(slot);
   if (close(f) != 0 && !write_err) write_err = errno ? errno : EIO;
 
   if (write_err) send_line(c, "ERR %s", strerror(write_err));
-  else send_line(c, "OK");
+  else {
+    send_line(c, "OK");
+    /* a whole file (pieces of a split upload are counted when renamed into place) */
+    if (may_truncate) act_file_done();
+  }
   return 0;
 }
 
@@ -340,14 +350,17 @@ static int cmd_get(conn_t *c, const char *path) {
     return 0;
   }
   if (send_line(c, "OK %lld", (long long)st.st_size) != 0) { close(f); return -1; }
+  int slot = act_begin('d', path, (long long)st.st_size);
   long long left = st.st_size;
   while (left > 0) {
     size_t want = left > IO_BUF_SIZE ? IO_BUF_SIZE : (size_t)left;
     ssize_t n = read(f, c->io, want);
-    if (n <= 0) { close(f); return -1; } /* can't report mid-stream: drop the connection */
-    if (write_all(c->fd, c->io, (size_t)n) != 0) { close(f); return -1; }
+    if (n <= 0) { close(f); act_end(slot); return -1; } /* can't report mid-stream: drop the connection */
+    if (write_all(c->fd, c->io, (size_t)n) != 0) { close(f); act_end(slot); return -1; }
     left -= n;
+    act_add(slot, n);
   }
+  act_end(slot);
   close(f);
   return 0;
 }
@@ -384,7 +397,11 @@ static void cmd_rename(conn_t *c, char *args) {
   *tab = '\0';
   if (!valid_path(args) || !valid_path(tab + 1)) { send_line(c, "ERR bad path"); return; }
   if (rename(args, tab + 1) != 0) send_line(c, "ERR %s", strerror(errno));
-  else send_line(c, "OK");
+  else {
+    send_line(c, "OK");
+    size_t len = strlen(args);
+    if (len > 7 && strcmp(args + len - 7, ".pbpart") == 0) act_file_done(); /* split upload finished */
+  }
 }
 
 /* ---------------------------------------------------------------- copy / move / stat */
@@ -752,6 +769,105 @@ static void cmd_setpin(conn_t *c, const char *pin) {
   notify("PlayBeam Server: PIN set");
 }
 
+/* ---------------------------------------------------------------- activity (web page) */
+
+#define MAX_ACT 32
+typedef struct act {
+  int used;
+  char kind;
+  char name[160];
+  long long done, total;
+} act_t;
+
+static act_t g_act[MAX_ACT];
+static pthread_mutex_t g_act_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned long long g_bytes_in, g_bytes_out;
+static unsigned long g_files_in;
+static time_t g_started;
+
+int act_begin(char kind, const char *path, long long total) {
+  const char *base = strrchr(path, '/');
+  base = base ? base + 1 : path;
+  char name[160];
+  snprintf(name, sizeof name, "%s", base);
+  /* a split upload writes "<name>.pbpart": show the real name */
+  size_t len = strlen(name);
+  if (len > 7 && strcmp(name + len - 7, ".pbpart") == 0) name[len - 7] = 0;
+  pthread_mutex_lock(&g_act_lock);
+  int slot = -1;
+  for (int i = 0; i < MAX_ACT; i++)
+    if (!g_act[i].used) {
+      g_act[i].used = 1;
+      g_act[i].kind = kind;
+      snprintf(g_act[i].name, sizeof g_act[i].name, "%s", name);
+      g_act[i].done = 0;
+      g_act[i].total = total;
+      slot = i;
+      break;
+    }
+  pthread_mutex_unlock(&g_act_lock);
+  return slot;
+}
+
+void act_add(int slot, long long bytes) {
+  pthread_mutex_lock(&g_act_lock);
+  if (slot >= 0) g_act[slot].done += bytes;
+  if (slot >= 0 && g_act[slot].kind == 'd') g_bytes_out += (unsigned long long)bytes;
+  else g_bytes_in += (unsigned long long)bytes;
+  pthread_mutex_unlock(&g_act_lock);
+}
+
+void act_end(int slot) {
+  if (slot < 0) return;
+  pthread_mutex_lock(&g_act_lock);
+  g_act[slot].used = 0;
+  pthread_mutex_unlock(&g_act_lock);
+}
+
+void act_file_done(void) {
+  pthread_mutex_lock(&g_act_lock);
+  g_files_in++;
+  pthread_mutex_unlock(&g_act_lock);
+}
+
+int pin_is_set(void) {
+  char saved[16];
+  return load_pin(saved, sizeof saved);
+}
+
+void web_lan_ip(char *out, size_t cap);
+
+size_t act_status_json(char *out, size_t cap) {
+  char ip[64];
+  web_lan_ip(ip, sizeof ip);
+  int pin = pin_is_set();
+  pthread_mutex_lock(&g_act_lock);
+  size_t n = (size_t)snprintf(out, cap,
+      "{\"version\":\"%s\",\"ip\":\"%s\",\"pin\":%s,\"uptime\":%ld,\"files_in\":%lu,"
+      "\"bytes_in\":%llu,\"bytes_out\":%llu,\"active\":[",
+      SERVER_VERSION, ip, pin ? "true" : "false", (long)(time(NULL) - g_started), g_files_in,
+      g_bytes_in, g_bytes_out);
+  int first = 1;
+  for (int i = 0; i < MAX_ACT && n < cap - 400; i++) {
+    if (!g_act[i].used) continue;
+    char esc[400];
+    size_t e = 0;
+    for (const char *p = g_act[i].name; *p && e < sizeof esc - 8; p++) {
+      unsigned char ch = (unsigned char)*p;
+      if (ch == '"' || ch == '\\') { esc[e++] = '\\'; esc[e++] = (char)ch; }
+      else if (ch < 0x20) e += (size_t)snprintf(esc + e, sizeof esc - e, "\\u%04x", ch);
+      else esc[e++] = (char)ch;
+    }
+    esc[e] = 0;
+    n += (size_t)snprintf(out + n, cap - n, "%s{\"k\":\"%c\",\"name\":\"%s\",\"done\":%lld,\"total\":%lld}",
+                          first ? "" : ",", g_act[i].kind, esc, g_act[i].done, g_act[i].total);
+    first = 0;
+  }
+  pthread_mutex_unlock(&g_act_lock);
+  if (n < cap - 3) n += (size_t)snprintf(out + n, cap - n, "]}");
+  return n < cap ? n : cap - 1;
+}
+
 static volatile int g_running = 1;
 static int g_listen_fd = -1;
 
@@ -850,7 +966,12 @@ int main(void) {
     return 1;
   }
 
-  notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
+  g_started = time(NULL);
+  web_start();
+  char ip[64];
+  web_lan_ip(ip, sizeof ip);
+  if (ip[0]) notify("PlayBeam Server " SERVER_VERSION " ready\nPage: http://%s:%d", ip, WEB_PORT);
+  else notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
 
   while (g_running) {
     int fd = accept(g_listen_fd, NULL, NULL);

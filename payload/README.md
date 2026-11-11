@@ -48,3 +48,13 @@ One command per line (`\n`), paths are absolute and take the rest of the line:
 | `MOVE <from>⇥<to>` | rename, or copy + delete across drives; `PROG` lines, then `OK` / `ERR` |
 | `QUIT` | closes the connection |
 | `SHUTDOWN` | `OK`, then the server exits |
+
+## Web page (port 9116)
+
+PlayBeam Server also serves a small web page: open `http://127.0.0.1:9116` in a browser on the PS5
+(or `http://<PS5 IP>:9116` from any device). It shows a QR code that opens the PlayBeam app with this
+PS5 selected (`playbeam://connect?host=<ip>`), and live progress of the files being sent.
+`GET /status` returns the same data as JSON.
+
+The QR code is made with [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library)
+by Project Nayuki (MIT License, see the header of `qrcodegen.c`).

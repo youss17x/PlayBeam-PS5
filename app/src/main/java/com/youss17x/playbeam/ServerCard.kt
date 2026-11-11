@@ -150,6 +150,8 @@ fun ServerCard(state: AppState) {
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
     if (serverUp == true) {
+        Text(S.webPageNote(state.host.trim()),
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
         PearlCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

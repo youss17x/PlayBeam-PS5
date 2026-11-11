@@ -28,6 +28,9 @@ class MainActivity : ComponentActivity() {
     /** Files received from other apps through the Android share menu. */
     private val sharedUris = mutableStateOf<List<Uri>>(emptyList())
 
+    /** PS5 address from the QR code on the PlayBeam Server page (playbeam://connect?host=…). */
+    private val linkedHost = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         I18n.load(this)
@@ -46,7 +49,8 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides dir) {
                 PearlTheme {
                     Surface(Modifier.fillMaxSize(), color = Pearl.Bg) {
-                        App(sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
+                        App(sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() },
+                            linkedHost = linkedHost.value, onLinkConsumed = { linkedHost.value = null })
                         if (splash) Splash(onFinished = { splash = false })
                     }
                 }
@@ -68,6 +72,12 @@ class MainActivity : ComponentActivity() {
 
     private fun handleShareIntent(intent: Intent?) {
         intent ?: return
+        if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == "playbeam") {
+            // only a plain IPv4 address or host name is accepted
+            val host = intent.data?.getQueryParameter("host")?.trim().orEmpty()
+            if (host.matches(Regex("[A-Za-z0-9.-]{1,64}"))) linkedHost.value = host
+            return
+        }
         val uris = when (intent.action) {
             Intent.ACTION_SEND ->
                 listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
@@ -139,7 +149,12 @@ enum class Tab(val icon: Int) {
 }
 
 @Composable
-fun App(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
+fun App(
+    sharedUris: List<Uri>,
+    onSharedConsumed: () -> Unit,
+    linkedHost: String? = null,
+    onLinkConsumed: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val state = remember { AppState(ctx) }
     var tab by remember { mutableStateOf(Tab.Upload) }
@@ -153,6 +168,19 @@ fun App(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
         }
     }
     update?.let { UpdateDialog(it, onDismiss = { update = null }) }
+
+    // scanned the QR code on the PS5: select that console
+    LaunchedEffect(linkedHost) {
+        val host = linkedHost ?: return@LaunchedEffect
+        state.host = host
+        if (state.consoles.none { it.host == host }) {
+            state.updateConsoles(state.consoles + Console("PS5", host, state.portInt))
+        }
+        state.save()
+        tab = Tab.Upload
+        android.widget.Toast.makeText(ctx, S.linkedTo(host), android.widget.Toast.LENGTH_LONG).show()
+        onLinkConsumed()
+    }
 
     LaunchedEffect(sharedUris) {
         if (sharedUris.isNotEmpty()) {

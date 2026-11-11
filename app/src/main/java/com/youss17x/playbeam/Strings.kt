@@ -149,6 +149,8 @@ abstract class Strings {
     abstract val running: String
     abstract val off: String
     abstract val pinTitle: String
+    abstract fun linkedTo(host: String): String
+    abstract fun webPageNote(host: String): String
     abstract val pinSub: String
     abstract val pinOn: String
     abstract val pinField: String
@@ -426,6 +428,8 @@ object En : Strings() {
     override val serverCardSub = "Faster uploads · extracts ZIPs on the PS5"
     override val running = "Running"
     override val off = "Off"
+    override fun linkedTo(host: String) = "Connected to the PS5 at $host"
+    override fun webPageNote(host: String) = "On the PS5, open http://127.0.0.1:9116 in a web browser to see a QR code and the transfer progress on your TV (or http://$host:9116 from any device)."
     override val pinTitle = "PIN protection"
     override val pinSub = "Only phones that know the PIN can use PlayBeam Server"
     override val pinOn = "On"
@@ -697,6 +701,8 @@ object Fr : Strings() {
     override val serverCardSub = "Envois plus rapides · décompresse les ZIP sur la PS5"
     override val running = "Actif"
     override val off = "Arrêté"
+    override fun linkedTo(host: String) = "Connecté à la PS5 ($host)"
+    override fun webPageNote(host: String) = "Sur la PS5, ouvrez http://127.0.0.1:9116 dans un navigateur pour voir un QR code et la progression des transferts sur la TV (ou http://$host:9116 depuis n'importe quel appareil)."
     override val pinTitle = "Protection par PIN"
     override val pinSub = "Seuls les téléphones qui connaissent le PIN peuvent utiliser PlayBeam Server"
     override val pinOn = "Activé"
@@ -973,6 +979,8 @@ object Ar : Strings() {
     override val serverCardSub = "رفع أسرع · يفك ضغط ZIP على PS5"
     override val running = "يعمل"
     override val off = "متوقف"
+    override fun linkedTo(host: String) = "تم الاتصال بالـ PS5 على $host"
+    override fun webPageNote(host: String) = "على الـ PS5 افتح http://127.0.0.1:9116 في متصفح لترى رمز QR وتقدّم النقل على التلفاز (أو http://$host:9116 من أي جهاز)."
     override val pinTitle = "الحماية برمز PIN"
     override val pinSub = "فقط الهواتف التي تعرف الرمز تستطيع استعمال PlayBeam Server"
     override val pinOn = "مفعّل"

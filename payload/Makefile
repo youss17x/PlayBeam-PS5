@@ -19,8 +19,8 @@ LDLIBS := -lpthread -lkernel_sys
 
 all: $(ELF)
 
-$(ELF): main.c miniz.c miniz.h
-	$(CC) $(CFLAGS) -o $@ main.c miniz.c $(LDLIBS)
+$(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h
+	$(CC) $(CFLAGS) -o $@ main.c web.c qrcodegen.c miniz.c $(LDLIBS)
 
 clean:
 	rm -f $(ELF)
