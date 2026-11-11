@@ -52,6 +52,8 @@ typedef struct notify_request {
 int sceKernelSendNotificationRequest(int, notify_request_t *, size_t, int);
 
 static void notify(const char *msg) {
+  printf("%s\n", msg);
+  fflush(stdout);
   notify_request_t req;
   memset(&req, 0, sizeof req);
   strncpy(req.message, msg, sizeof req.message - 1);
@@ -67,6 +69,8 @@ static int write_file(const char *path, const uint8_t *data, size_t size) {
 
 int main(void) {
   char msg[128];
+  printf("playbeam-tile: started\n");
+  fflush(stdout);
   notify("PlayBeam: adding the home screen tile…");
   int err = sceAppInstUtilInitialize();
   if (err) {

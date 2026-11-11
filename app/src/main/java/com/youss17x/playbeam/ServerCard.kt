@@ -158,8 +158,8 @@ fun ServerCard(state: AppState) {
         scope.launch {
             tileBusy = true; tileMsg = null
             tileMsg = try {
-                PayloadSender.sendTileInstaller(ctx, host, loaderPort)
-                S.tileSent
+                val out = PayloadSender.sendTileInstaller(ctx, host, loaderPort)
+                S.tileSent + if (out.isNotBlank()) "\n\n" + out.takeLast(1500) else ""
             } catch (e: Exception) {
                 "❌ " + S.loaderNotRunning(e.message ?: S.sendFailed, loaderPort)
             }

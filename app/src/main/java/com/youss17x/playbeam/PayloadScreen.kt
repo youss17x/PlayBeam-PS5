@@ -106,9 +106,33 @@ object PayloadSender {
     suspend fun sendBundledServer(ctx: Context, host: String, port: Int, onProgress: (Float) -> Unit): Int =
         sendAsset(ctx, "playbeam-server.elf", host, port, onProgress)
 
-    /** One-shot payload that adds the PlayBeam tile to the PS5 home screen. */
-    suspend fun sendTileInstaller(ctx: Context, host: String, port: Int): Int =
-        sendAsset(ctx, "playbeam-tile.elf", host, port) {}
+    /**
+     * One-shot payload that adds the PlayBeam tile to the PS5 home screen. Returns what the
+     * ELF loader and the installer printed (the loader sends the payload's output back).
+     */
+    suspend fun sendTileInstaller(ctx: Context, host: String, port: Int): String {
+        val bytes = withContext(Dispatchers.IO) {
+            runCatching { ctx.assets.open("playbeam-tile.elf").use { it.readBytes() } }.getOrNull()
+        } ?: throw IOException("playbeam-tile.elf is not included in this build")
+        return withContext(Dispatchers.IO) {
+            Socket().use { s ->
+                s.connect(InetSocketAddress(host, port), 5_000)
+                s.getOutputStream().apply { write(bytes); flush() }
+                s.shutdownOutput()
+                // read the output for a few seconds
+                s.soTimeout = 1_000
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(4096)
+                val end = System.currentTimeMillis() + 8_000
+                while (System.currentTimeMillis() < end) {
+                    val n = try { s.getInputStream().read(buf) } catch (e: java.net.SocketTimeoutException) { continue }
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                }
+                out.toString(Charsets.UTF_8.name()).trim()
+            }
+        }
+    }
 
     private suspend fun sendAsset(ctx: Context, name: String, host: String, port: Int, onProgress: (Float) -> Unit): Int {
         val bytes = withContext(Dispatchers.IO) {
