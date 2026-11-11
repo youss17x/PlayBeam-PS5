@@ -536,7 +536,6 @@ private fun FileRow(
     }
 }
 
-@Composable
 /**
  * Names what a path belongs to when deleting it could break the PS5 setup or other homebrew
  * (Payload Manager, etaHEN, the autoloader, system folders), or null for ordinary files.
@@ -555,6 +554,7 @@ internal fun protectedOwner(path: String): String? {
     }
 }
 
+@Composable
 internal fun MenuItem(
     text: String,
     icon: Int,
