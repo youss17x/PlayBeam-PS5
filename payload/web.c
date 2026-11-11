@@ -4,8 +4,6 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <ifaddrs.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -20,23 +18,8 @@
 
 /* The PS5's address on the local network (not 127.0.0.1), or "" if unknown. */
 static void lan_ip(char *out, size_t cap) {
+  /* the address a route to the internet would use (no packet is sent) */
   out[0] = 0;
-  struct ifaddrs *ifs = NULL;
-  if (getifaddrs(&ifs) == 0) {
-    for (struct ifaddrs *i = ifs; i; i = i->ifa_next) {
-      if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
-      if (i->ifa_flags & IFF_LOOPBACK) continue;
-      struct sockaddr_in *a = (struct sockaddr_in *)i->ifa_addr;
-      unsigned char *b = (unsigned char *)&a->sin_addr;
-      if (b[0] == 127 || b[0] == 0) continue;
-      inet_ntop(AF_INET, &a->sin_addr, out, (socklen_t)cap);
-      /* prefer a private LAN address */
-      if (b[0] == 192 || b[0] == 10 || (b[0] == 172 && (b[1] & 0xf0) == 16)) break;
-    }
-    freeifaddrs(ifs);
-  }
-  if (out[0]) return;
-  /* fallback: the address a route to the internet would use (no packet is sent) */
   int s = socket(AF_INET, SOCK_DGRAM, 0);
   if (s < 0) return;
   struct sockaddr_in dst = {0};
@@ -46,7 +29,8 @@ static void lan_ip(char *out, size_t cap) {
   if (connect(s, (struct sockaddr *)&dst, sizeof dst) == 0) {
     struct sockaddr_in me;
     socklen_t len = sizeof me;
-    if (getsockname(s, (struct sockaddr *)&me, &len) == 0) inet_ntop(AF_INET, &me.sin_addr, out, (socklen_t)cap);
+    if (getsockname(s, (struct sockaddr *)&me, &len) == 0 && me.sin_addr.s_addr != 0)
+      inet_ntop(AF_INET, &me.sin_addr, out, (socklen_t)cap);
   }
   close(s);
 }

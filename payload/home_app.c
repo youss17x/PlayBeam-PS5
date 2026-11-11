@@ -35,13 +35,20 @@
 INCASSET(pb_param_json, "assets/param.json");
 INCASSET(pb_icon0_png, "assets/icon0.png");
 
-int sceAppInstUtilInitialize(void);
-int sceAppInstUtilTerminate(void);
-int sceAppInstUtilAppInstallAll(void *);
-int sceAppInstUtilAppInstallTitleDir(const char *title_id, const char *dir, void *);
-int sceSystemServiceLaunchWebBrowser(const char *uri, void *param);
-int sceUserServiceInitialize(void *param);
-int sceLncUtilGetAppIdOfRunningBigApp(void);
+/* System libraries are loaded at run time: if one can't be loaded, the server still runs
+   (only the home tile / browser are skipped). */
+int sceKernelLoadStartModule(const char *path, size_t argc, const void *argv, uint32_t flags, void *opt, int *res);
+int sceKernelDlsym(int handle, const char *sym, void **addr);
+
+static void *sym(const char *lib, const char *name) {
+  char path[128];
+  snprintf(path, sizeof path, "/system/common/lib/%s", lib);
+  int h = sceKernelLoadStartModule(path, 0, NULL, 0, NULL, NULL);
+  if (h < 0) return NULL;
+  void *addr = NULL;
+  if (sceKernelDlsym(h, name, &addr) != 0) return NULL;
+  return addr;
+}
 
 void notify(const char *fmt, ...);
 
@@ -71,7 +78,13 @@ int home_app_install(void) {
   if (same_file(param, pb_param_json, pb_param_json_size) && same_file(icon, pb_icon0_png, pb_icon0_png_size))
     return 0;
 
-  int err = sceAppInstUtilInitialize();
+  int (*init)(void) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilInitialize");
+  int (*term)(void) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilTerminate");
+  int (*install_dir)(const char *, const char *, void *) =
+      sym("libSceAppInstUtil.sprx", "sceAppInstUtilAppInstallTitleDir");
+  int (*install_all)(void *) = sym("libSceAppInstUtil.sprx", "sceAppInstUtilAppInstallAll");
+  if (!init || (!install_dir && !install_all)) { notify("PlayBeam: home tile not available on this PS5"); return -1; }
+  int err = init();
   if (err != 0) { notify("PlayBeam: home tile not added (init 0x%08x)", err); return -1; }
   int rc = -1;
   mkdir("/user/app", 0755);
@@ -79,10 +92,10 @@ int home_app_install(void) {
   mkdir(APP_DIR "/sce_sys", 0755);
   if (write_file(param, pb_param_json, pb_param_json_size) == 0 &&
       write_file(icon, pb_icon0_png, pb_icon0_png_size) == 0) {
-    rc = sceAppInstUtilAppInstallTitleDir(TITLE_ID, "/user/app/", 0);
-    if (rc != 0) rc = sceAppInstUtilAppInstallAll(0);
+    rc = install_dir ? install_dir(TITLE_ID, "/user/app/", 0) : -1;
+    if (rc != 0 && install_all) rc = install_all(0);
   }
-  sceAppInstUtilTerminate();
+  if (term) term();
   if (rc == 0) notify("PlayBeam added to the home screen");
   else notify("PlayBeam: home tile not added (0x%08x)", rc);
   return rc;
@@ -90,9 +103,13 @@ int home_app_install(void) {
 
 /* Opens the page in the PS5 browser, unless a game is running (don't pull the player out). */
 void home_app_open_page(void) {
-  if ((uint32_t)sceLncUtilGetAppIdOfRunningBigApp() != UINT32_MAX) return;
-  sceUserServiceInitialize(0); /* needed before the browser can be launched */
-  int err = sceSystemServiceLaunchWebBrowser(PAGE_URL, 0);
+  int (*big_app)(void) = sym("libSceSystemService.sprx", "sceLncUtilGetAppIdOfRunningBigApp");
+  int (*user_init)(void *) = sym("libSceUserService.sprx", "sceUserServiceInitialize");
+  int (*browser)(const char *, void *) = sym("libSceSystemService.sprx", "sceSystemServiceLaunchWebBrowser");
+  if (!browser) return;
+  if (big_app && (uint32_t)big_app() != UINT32_MAX) return; /* a game is running */
+  if (user_init) user_init(0); /* needed before the browser can be launched */
+  int err = browser(PAGE_URL, 0);
   if (err != 0) notify("PlayBeam: couldn't open the browser (0x%08x)", err);
 }
 

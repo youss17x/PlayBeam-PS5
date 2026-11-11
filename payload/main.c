@@ -966,13 +966,10 @@ int main(void) {
     return 1;
   }
 
+  notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
   g_started = time(NULL);
   web_start();
   home_app_start();
-  char ip[64];
-  web_lan_ip(ip, sizeof ip);
-  if (ip[0]) notify("PlayBeam Server " SERVER_VERSION " ready\nPage: http://%s:%d", ip, WEB_PORT);
-  else notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
 
   while (g_running) {
     int fd = accept(g_listen_fd, NULL, NULL);
