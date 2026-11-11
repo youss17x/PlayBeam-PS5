@@ -226,6 +226,11 @@ abstract class Strings {
     abstract fun deleteQ(name: String): String
     abstract val deleteFolderBody: String
     abstract val deleteFileBody: String
+    abstract fun deleteProtectedWarn(owner: String): String
+    abstract val deleteUnderstand: String
+    abstract val ownerMainFolder: String
+    abstract val ownerAutoloader: String
+    abstract val ownerSystem: String
     abstract fun free(size: String): String
     abstract fun ofTotal(done: String, total: String): String
     abstract val homebrewApps: String
@@ -496,6 +501,11 @@ object En : Strings() {
     override fun deleteQ(name: String) = "Delete $name?"
     override val deleteFolderBody = "The folder and everything inside it will be deleted from the PS5. This can't be undone."
     override val deleteFileBody = "This file will be deleted from the PS5. This can't be undone."
+    override fun deleteProtectedWarn(owner: String) = "This belongs to $owner. Deleting it can stop it from working."
+    override val deleteUnderstand = "I understand, delete it"
+    override val ownerMainFolder = "a main PS5 folder"
+    override val ownerAutoloader = "the autoloader"
+    override val ownerSystem = "the PS5 system (games, saves, settings)"
     override fun free(size: String) = "$size free"
     override fun ofTotal(done: String, total: String) = "$done of $total"
     override val homebrewApps = "Homebrew apps"
@@ -762,6 +772,11 @@ object Fr : Strings() {
     override fun deleteQ(name: String) = "Supprimer $name ?"
     override val deleteFolderBody = "Le dossier et tout son contenu seront supprimés de la PS5. Action irréversible."
     override val deleteFileBody = "Ce fichier sera supprimé de la PS5. Action irréversible."
+    override fun deleteProtectedWarn(owner: String) = "Ceci appartient à $owner. Le supprimer peut l'empêcher de fonctionner."
+    override val deleteUnderstand = "Je comprends, supprimer"
+    override val ownerMainFolder = "un dossier principal de la PS5"
+    override val ownerAutoloader = "l'autoloader"
+    override val ownerSystem = "le système de la PS5 (jeux, sauvegardes, réglages)"
     override fun free(size: String) = "$size libres"
     override fun ofTotal(done: String, total: String) = "$done sur $total"
     override val homebrewApps = "Applications homebrew"
@@ -1033,6 +1048,11 @@ object Ar : Strings() {
     override fun deleteQ(name: String) = "حذف $name؟"
     override val deleteFolderBody = "سيُحذف المجلد وكل ما بداخله من PS5. لا يمكن التراجع عن ذلك."
     override val deleteFileBody = "سيُحذف هذا الملف من PS5. لا يمكن التراجع عن ذلك."
+    override fun deleteProtectedWarn(owner: String) = "هذا يخص $owner. حذفه قد يجعله يتوقف عن العمل."
+    override val deleteUnderstand = "فهمت، احذفه"
+    override val ownerMainFolder = "مجلد رئيسي في الـ PS5"
+    override val ownerAutoloader = "الـ autoloader"
+    override val ownerSystem = "نظام الـ PS5 (الألعاب، الحفظ، الإعدادات)"
     override fun free(size: String) = "$size متاحة"
     override fun ofTotal(done: String, total: String) = "$done من $total"
     override val homebrewApps = "تطبيقات homebrew"

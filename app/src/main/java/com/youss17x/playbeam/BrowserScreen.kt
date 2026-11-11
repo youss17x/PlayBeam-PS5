@@ -373,23 +373,37 @@ fun BrowserScreen(
             dialog = null
             act { it.renamePath(joinPath(path, d.file.name), joinPath(path, name)) }
         }
-        is BrowserDialog.Delete -> AlertDialog(
+        is BrowserDialog.Delete -> {
+            val full = joinPath(path, d.file.name)
+            val owner = protectedOwner(full)
+            var understood by remember(full) { mutableStateOf(false) }
+            AlertDialog(
             onDismissRequest = { dialog = null },
             containerColor = Pearl.Card,
             title = { Text(S.deleteQ(d.file.name)) },
             text = {
-                Text(
-                    if (d.file.isDir) S.deleteFolderBody else S.deleteFileBody
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(if (d.file.isDir) S.deleteFolderBody else S.deleteFileBody)
+                    if (owner != null) {
+                        Text("⚠️ " + S.deleteProtectedWarn(owner), color = Pearl.Error,
+                            style = MaterialTheme.typography.bodyMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { understood = !understood }) {
+                            Checkbox(understood, { understood = it })
+                            Text(S.deleteUnderstand, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = owner == null || understood, onClick = {
                     dialog = null
-                    act { it.deletePath(joinPath(path, d.file.name), d.file.isDir) }
-                }) { Text(S.delete, color = Pearl.Error) }
+                    act { it.deletePath(full, d.file.isDir) }
+                }) { Text(S.delete, color = if (owner == null || understood) Pearl.Error else Pearl.Faint) }
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text(S.cancel) } },
         )
+        }
         is BrowserDialog.MoveTo -> MoveToDialog(
             file = d.file,
             from = path,
@@ -523,6 +537,24 @@ private fun FileRow(
 }
 
 @Composable
+/**
+ * Names what a path belongs to when deleting it could break the PS5 setup or other homebrew
+ * (Payload Manager, etaHEN, the autoloader, system folders), or null for ordinary files.
+ */
+internal fun protectedOwner(path: String): String? {
+    val p = path.trimEnd('/').lowercase()
+    fun under(root: String) = p == root || p.startsWith("$root/")
+    return when {
+        p.count { it == '/' } <= 1 -> S.ownerMainFolder
+        under("/data/pldmgr") -> "Payload Manager"
+        under("/data/etahen") -> "etaHEN"
+        p.startsWith("/data/ps5_autoloader") || p.matches(Regex("/mnt/usb\\d/ps5_autoloader(/.*)?")) -> S.ownerAutoloader
+        under("/data/playbeam") -> "PlayBeam Server"
+        listOf("/user", "/system", "/system_ex", "/system_data", "/preinst", "/update").any { under(it) } -> S.ownerSystem
+        else -> null
+    }
+}
+
 internal fun MenuItem(
     text: String,
     icon: Int,
