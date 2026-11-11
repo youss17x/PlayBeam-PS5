@@ -18,10 +18,10 @@ TILE := playbeam-tile.elf
 CFLAGS := -Wall -O2 -Wno-unused-function
 LDLIBS := -lpthread -lkernel_sys
 
-all: $(ELF) $(TILE)
+all: $(TILE) $(ELF)
 
-$(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h
-	$(CC) $(CFLAGS) -o $@ main.c web.c qrcodegen.c miniz.c $(LDLIBS)
+$(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h $(TILE)
+	$(CC) $(CFLAGS) -DPLAYBEAM_TILE_ELF='"$(TILE)"' -o $@ main.c web.c qrcodegen.c miniz.c $(LDLIBS)
 
 # One-shot installer for the PlayBeam tile on the PS5 home screen
 $(TILE): tile/main.c tile/assets/param.json tile/assets/icon0.png
