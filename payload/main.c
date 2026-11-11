@@ -969,7 +969,6 @@ int main(void) {
   notify("PlayBeam Server " SERVER_VERSION " ready on port %d", SERVER_PORT);
   g_started = time(NULL);
   web_start();
-  home_app_start();
 
   while (g_running) {
     int fd = accept(g_listen_fd, NULL, NULL);

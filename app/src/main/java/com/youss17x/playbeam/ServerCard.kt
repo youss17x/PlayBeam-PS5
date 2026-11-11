@@ -149,6 +149,28 @@ fun ServerCard(state: AppState) {
     Text(S.serverLoaderNote(loaderPort),
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
 
+    // PlayBeam tile on the PS5 home screen (opens the server page in the PS5 browser)
+    var tileMsg by remember { mutableStateOf<String?>(null) }
+    var tileBusy by remember { mutableStateOf(false) }
+    SecondaryButton(S.addTile, R.drawable.ic_plus, {
+        val host = state.host.trim()
+        if (host.isBlank()) { tileMsg = S.setPs5InSettings; return@SecondaryButton }
+        scope.launch {
+            tileBusy = true; tileMsg = null
+            tileMsg = try {
+                PayloadSender.sendTileInstaller(ctx, host, loaderPort)
+                S.tileSent
+            } catch (e: Exception) {
+                "❌ " + S.loaderNotRunning(e.message ?: S.sendFailed, loaderPort)
+            }
+            tileBusy = false
+        }
+    }, Modifier.fillMaxWidth(), enabled = !tileBusy)
+    tileMsg?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp),
+            color = if (it.startsWith("❌")) Pearl.Error else Pearl.Muted)
+    }
+
     if (serverUp == true) {
         Text(S.webPageNote(state.host.trim()),
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))

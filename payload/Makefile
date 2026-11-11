@@ -13,17 +13,22 @@ else
 endif
 
 ELF := playbeam-server.elf
+TILE := playbeam-tile.elf
 
 CFLAGS := -Wall -O2 -Wno-unused-function
 LDLIBS := -lpthread -lkernel_sys
 
-all: $(ELF)
+all: $(ELF) $(TILE)
 
-$(ELF): main.c web.c home_app.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h assets/param.json assets/icon0.png
-	$(CC) $(CFLAGS) -o $@ main.c web.c home_app.c qrcodegen.c miniz.c $(LDLIBS)
+$(ELF): main.c web.c qrcodegen.c miniz.c miniz.h activity.h qrcodegen.h
+	$(CC) $(CFLAGS) -o $@ main.c web.c qrcodegen.c miniz.c $(LDLIBS)
+
+# One-shot installer for the PlayBeam tile on the PS5 home screen
+$(TILE): tile/main.c tile/assets/param.json tile/assets/icon0.png
+	cd tile && $(CC) $(CFLAGS) -o ../$@ main.c -lSceIpmi -lSceAppInstUtil -lSceUserService -lSceSystemService
 
 clean:
-	rm -f $(ELF)
+	rm -f $(ELF) $(TILE)
 
 test: $(ELF)
 	$(PS5_DEPLOY) -h $(PS5_HOST) -p $(PS5_PORT) $<

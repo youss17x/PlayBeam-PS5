@@ -103,10 +103,17 @@ object PayloadSender {
     }
 
     /** The PlayBeam Server payload bundled inside the app. */
-    suspend fun sendBundledServer(ctx: Context, host: String, port: Int, onProgress: (Float) -> Unit): Int {
+    suspend fun sendBundledServer(ctx: Context, host: String, port: Int, onProgress: (Float) -> Unit): Int =
+        sendAsset(ctx, "playbeam-server.elf", host, port, onProgress)
+
+    /** One-shot payload that adds the PlayBeam tile to the PS5 home screen. */
+    suspend fun sendTileInstaller(ctx: Context, host: String, port: Int): Int =
+        sendAsset(ctx, "playbeam-tile.elf", host, port) {}
+
+    private suspend fun sendAsset(ctx: Context, name: String, host: String, port: Int, onProgress: (Float) -> Unit): Int {
         val bytes = withContext(Dispatchers.IO) {
-            runCatching { ctx.assets.open("playbeam-server.elf").use { it.readBytes() } }.getOrNull()
-        } ?: throw IOException("PlayBeam Server is not included in this build")
+            runCatching { ctx.assets.open(name).use { it.readBytes() } }.getOrNull()
+        } ?: throw IOException("$name is not included in this build")
         return sendBytes(bytes, host, port, onProgress)
     }
 

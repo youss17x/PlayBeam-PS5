@@ -29,7 +29,7 @@ jobs:
         run: |
           make -C payload PS5_PAYLOAD_SDK="$HOME/ps5sdk"
           mkdir -p app/src/main/assets
-          cp payload/playbeam-server.elf app/src/main/assets/
+          cp payload/playbeam-server.elf payload/playbeam-tile.elf app/src/main/assets/
 
       # ---- Android app ----
       - uses: actions/setup-java@v4
