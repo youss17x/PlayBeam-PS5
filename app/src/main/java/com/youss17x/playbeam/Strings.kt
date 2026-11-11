@@ -373,7 +373,7 @@ object En : Strings() {
 
     override val tabUpload = "Upload"
     override val tabFiles = "Files"
-    override val tabPayload = "Payload · PKG"
+    override val tabPayload = "Payload·PKG"
     override val tabHistory = "History"
     override val tabSettings = "Settings"
 
@@ -673,7 +673,7 @@ object Fr : Strings() {
 
     override val tabUpload = "Envoi"
     override val tabFiles = "Fichiers"
-    override val tabPayload = "Payload · PKG"
+    override val tabPayload = "Payload·PKG"
     override val tabHistory = "Historique"
     override val tabSettings = "Réglages"
 
@@ -973,7 +973,7 @@ object Ar : Strings() {
 
     override val tabUpload = "رفع"
     override val tabFiles = "الملفات"
-    override val tabPayload = "Payload · PKG"
+    override val tabPayload = "Payload·PKG"
     override val tabHistory = "السجل"
     override val tabSettings = "الإعدادات"
 

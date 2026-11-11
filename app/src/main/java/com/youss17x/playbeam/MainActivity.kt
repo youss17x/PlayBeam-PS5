@@ -213,7 +213,8 @@ fun App(
                                 } else PIcon(t.icon, c)
                             },
                             label = {
-                                Text(t.label, fontSize = 11.sp, maxLines = 1,
+                                Text(t.label, fontSize = if (t == Tab.Payload) 10.sp else 11.sp, maxLines = 1, softWrap = false,
+                                    letterSpacing = if (t == Tab.Payload) (-0.2).sp else androidx.compose.ui.unit.TextUnit.Unspecified,
                                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
                             },
                             colors = NavigationBarItemDefaults.colors(
