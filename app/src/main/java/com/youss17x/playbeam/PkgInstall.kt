@@ -18,7 +18,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.io.FileInputStream
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetSocketAddress
@@ -27,7 +26,7 @@ import java.net.Socket
 import java.net.SocketException
 import java.security.SecureRandom
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicLong
+import java.util.TreeMap
 
 /**
  * Installs a PKG from the phone on the PS5 through etaHEN's Direct PKG Installer (DPI v1, TCP 9090):
@@ -51,6 +50,29 @@ object PkgState {
     val state: StateFlow<Info> = flow
 
     fun reset() { if (flow.value.phase != Phase.SERVING && flow.value.phase != Phase.STARTING) flow.value = Info() }
+}
+
+/** Counts unique byte intervals; a metadata read near EOF is not a full download. */
+internal class PkgCoverage {
+    private val ranges = TreeMap<Long, Long>()
+
+    @Synchronized fun add(start: Long, end: Long): Long {
+        var first = start
+        var last = end
+        ranges.floorEntry(first)?.takeIf { it.value >= first }?.let {
+            first = it.key
+            last = maxOf(last, it.value)
+            ranges.remove(it.key)
+        }
+        var next = ranges.ceilingEntry(first)
+        while (next != null && next.key <= last) {
+            last = maxOf(last, next.value)
+            ranges.remove(next.key)
+            next = ranges.ceilingEntry(first)
+        }
+        ranges[first] = last
+        return ranges.entries.sumOf { it.value - it.key }
+    }
 }
 
 class PkgInstallService : Service() {
@@ -89,8 +111,13 @@ class PkgInstallService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun run(uri: Uri, name: String, size: Long, host: String, dpiPort: Int) {
+    private fun run(uri: Uri, name: String, reportedSize: Long, host: String, dpiPort: Int) {
         try {
+            val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { asset ->
+                if (asset.length >= 0) asset.length else reportedSize
+            } ?: throw IOException("Cannot open the PKG file")
+            if (size <= 0) throw IOException("Cannot determine the PKG file size; select a local downloaded file")
+            PkgState.flow.value = PkgState.flow.value.copy(size = size)
             val ip = phoneIp(this) ?: throw IOException(S.pkgNoWifi)
             val token = ByteArray(8).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
             val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "package.pkg" }
@@ -108,10 +135,11 @@ class PkgInstallService : Service() {
                 catch (e: IOException) { throw IOException(S.pkgDpiUnreachable(dpiPort)) }
                 s.soTimeout = 60_000
                 s.getOutputStream().apply { write("{ \"url\" : \"$url\" }".toByteArray()); flush() }
-                runCatching { s.getInputStream().readBytes().toString(Charsets.UTF_8) }.getOrDefault("")
+                s.getInputStream().readBytes().toString(Charsets.UTF_8)
             }
             val res = Regex("\"res\"\\s*:\\s*\"?(-?\\w+)\"?").find(reply)?.groupValues?.get(1)
-            if (res != null && res != "0") throw IOException(S.pkgDpiError(res))
+            if (res == null) throw IOException("Invalid or empty response from Direct PKG Installer")
+            if (res != "0") throw IOException(S.pkgDpiError(res))
 
             PkgState.flow.value = PkgState.flow.value.copy(phase = PkgState.Phase.SERVING, message = S.pkgServing)
             lastActivity = System.currentTimeMillis()
@@ -141,7 +169,7 @@ class PkgInstallService : Service() {
 
     /** Minimal HTTP/1.1 file server for one file, with HEAD and Range support. */
     private fun serve(ss: ServerSocket, uri: Uri, path: String, size: Long) {
-        val highest = AtomicLong(0)
+        val coverage = PkgCoverage()
         while (!ss.isClosed) {
             val c = try { ss.accept() } catch (e: SocketException) { break }
             pool.execute {
@@ -200,9 +228,9 @@ class PkgInstallService : Service() {
                         }
                         out.write(head.toByteArray())
                         if (method == "HEAD") return@use
-                        contentResolver.openFileDescriptor(uri, "r")!!.use { pfd ->
-                            FileInputStream(pfd.fileDescriptor).channel.use { ch ->
-                                ch.position(start)
+                        contentResolver.openAssetFileDescriptor(uri, "r")!!.use { asset ->
+                            asset.createInputStream().channel.use { ch ->
+                                ch.position(asset.startOffset + start)
                                 val buf = java.nio.ByteBuffer.allocate(1 shl 20)
                                 var left = len
                                 var pos = start
@@ -215,10 +243,12 @@ class PkgInstallService : Service() {
                                     left -= n
                                     pos += n
                                     lastActivity = System.currentTimeMillis()
-                                    // progress: furthest byte the PS5 has fetched
-                                    val h = highest.updateAndGet { maxOf(it, pos) }
-                                    val st = PkgState.flow.value
-                                    if (h > st.served) PkgState.flow.value = st.copy(served = h)
+                                    // Count only bytes actually sent, without counting retries twice.
+                                    synchronized(coverage) {
+                                        val h = coverage.add(pos - n, pos)
+                                        val st = PkgState.flow.value
+                                        if (h > st.served) PkgState.flow.value = st.copy(served = h)
+                                    }
                                 }
                                 out.flush()
                             }
@@ -311,12 +341,13 @@ class PkgInstallService : Service() {
                     s.connect(InetSocketAddress(host, port), 5_000)
                     s.soTimeout = 60_000
                     s.getOutputStream().apply { write(json.toByteArray()); flush() }
-                    runCatching { s.getInputStream().readBytes().toString(Charsets.UTF_8) }.getOrDefault("")
+                    s.getInputStream().readBytes().toString(Charsets.UTF_8)
                 }
             } catch (e: IOException) { return S.pkgDpiUnreachable(port) }
             val res = Regex("\"res\"\\s*:\\s*\"?(-?\\w+)\"?").find(reply)?.groupValues?.get(1)
             return when (res) {
-                null, "0" -> null
+                null -> "Invalid or empty response from Direct PKG Installer"
+                "0" -> null
                 "-2135809020" -> S.pkgUrlNotFound          // 0x80B22404: HTTP 404 from the link
                 else -> S.pkgDpiError(res)
             }
